@@ -1,0 +1,15 @@
+ID 0 : Aphid
+ID 1 : Black Rust
+ID 2 : Blast
+ID 3 : Brown Rust
+ID 4 : Common Root Rot
+ID 5 : Fusarium Head
+ID 6 : Leaf Blight
+ID 7 : Mildew
+ID 8 : Mite
+ID 9 : Septoria
+ID 10 : Smut
+ID 11 : Stem_fly
+ID 12 : Tan spot
+ID 13 : healthy_wheat
+ID 14 : yellow_rust

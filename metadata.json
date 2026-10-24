@@ -1,0 +1,6 @@
+{
+  "name": "WheatGuard & WheatField - AgroDrone & AI Disease Detection",
+  "description": "منظومة متكاملة لمراقبة حقول القمح: تطبيق WheatGuard لكشف الأمراض الفطرية والطفيلية بالذكاء الاصطناعي وتطبيق WheatField لمحاكاة الدرون ومستشعرات الطقس والموقع الجغرافي",
+  "requestFramePermissions": ["geolocation", "camera"],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}

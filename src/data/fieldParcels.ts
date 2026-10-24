@@ -1,0 +1,55 @@
+import { FieldParcel } from '../types';
+
+export const FIELD_PARCELS: FieldParcel[] = [
+  {
+    id: 'parcel-tadla-01',
+    name: 'حقل تادلة النموذجي (القطاع 4)',
+    region: 'سهل تادلة - بني ملال، المغرب',
+    areaHectares: 24.5,
+    wheatVariety: 'قمح صلب - صنف كريم (Durum Karim)',
+    sowingDate: '15 نوفمبر',
+    healthIndex: 82,
+    lastScanned: 'اليوم، 09:15 ص',
+    center: { lat: 31.8972, lng: -6.5891 },
+    bounds: [
+      [31.8995, -6.5925],
+      [31.8998, -6.5855],
+      [31.8945, -6.5852],
+      [31.8942, -6.5922],
+    ],
+  },
+  {
+    id: 'parcel-nile-02',
+    name: 'حقل دلتا النيل للحبوب (حوض 12)',
+    region: 'محافظة الشرقية - دلتا النيل، مصر',
+    areaHectares: 18.2,
+    wheatVariety: 'قمح خبز - صنف مصر 3 (Giza/Misr 3)',
+    sowingDate: '25 نوفمبر',
+    healthIndex: 74,
+    lastScanned: 'أمس، 16:30 م',
+    center: { lat: 30.5875, lng: 31.5028 },
+    bounds: [
+      [30.5895, 31.5005],
+      [30.5898, 31.5052],
+      [30.5852, 31.5049],
+      [30.5850, 31.5002],
+    ],
+  },
+  {
+    id: 'parcel-qassim-03',
+    name: 'المحور الزراعي الحديث (Pivot 7)',
+    region: 'منطقة القصيم - بريدة، السعودية',
+    areaHectares: 35.0,
+    wheatVariety: 'قمح ديورم عالي الجودة - صنف يوكورا روجو',
+    sowingDate: '01 ديسمبر',
+    healthIndex: 91,
+    lastScanned: 'اليوم، 07:45 ص',
+    center: { lat: 26.3265, lng: 43.9745 },
+    bounds: [
+      [26.3295, 43.9715],
+      [26.3298, 43.9775],
+      [26.3235, 43.9772],
+      [26.3232, 43.9712],
+    ],
+  },
+];
