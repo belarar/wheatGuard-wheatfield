@@ -44,6 +44,7 @@ export const WheatGuardApp: React.FC<WheatGuardAppProps> = ({
 }) => {
   // Current active sample for diagnosis
   const [activeImage, setActiveImage] = useState<string>(WHEAT_DISEASE_SAMPLES[0].imageUrl);
+  const [activeMediaType, setActiveMediaType] = useState<'image' | 'video'>('image');
   const [activeDiagnosis, setActiveDiagnosis] = useState<WheatDiseaseDiagnosis | null>(
     (WHEAT_DISEASE_SAMPLES[0].precomputedDiagnosis as WheatDiseaseDiagnosis) || null
   );
@@ -123,6 +124,7 @@ export const WheatGuardApp: React.FC<WheatGuardAppProps> = ({
     setSelectedSampleId(sample.id);
     setSelectedPacketId(undefined);
     setActiveImage(sample.imageUrl);
+    setActiveMediaType('image');
     setSourceLabel(sample.title);
     if (sample.precomputedDiagnosis) {
       setActiveDiagnosis(sample.precomputedDiagnosis as WheatDiseaseDiagnosis);
@@ -137,6 +139,7 @@ export const WheatGuardApp: React.FC<WheatGuardAppProps> = ({
     setSelectedSampleId('');
     if (packet.capturedMedia?.dataUrl) {
       setActiveImage(packet.capturedMedia.dataUrl);
+      setActiveMediaType(packet.capturedMedia.type || 'image');
     }
     if (packet.diagnosis) {
       setActiveDiagnosis(packet.diagnosis);
@@ -151,13 +154,15 @@ export const WheatGuardApp: React.FC<WheatGuardAppProps> = ({
     const file = e.target.files?.[0];
     if (!file) return;
 
+    const isVideo = file.type.startsWith('video/');
     const reader = new FileReader();
     reader.onload = (event) => {
       const dataUrl = event.target?.result as string;
       setActiveImage(dataUrl);
+      setActiveMediaType(isVideo ? 'video' : 'image');
       setSelectedSampleId('');
       setSelectedPacketId(undefined);
-      setSourceLabel(`ملف مرفوع: ${file.name}`);
+      setSourceLabel(`${isVideo ? 'فيديو مرفوع' : 'صورة مرفوعة'}: ${file.name}`);
       handleRunDiagnosis(dataUrl, file.name);
     };
     reader.readAsDataURL(file);
@@ -247,13 +252,23 @@ export const WheatGuardApp: React.FC<WheatGuardAppProps> = ({
               </div>
             </div>
 
-            {/* Image Preview Container */}
+            {/* Image/Video Preview Container */}
             <div className="relative aspect-video sm:aspect-[21/9] w-full bg-slate-950 rounded-xl overflow-hidden border border-slate-800 flex items-center justify-center">
-              <img
-                src={activeImage}
-                alt="عينة القمح المراد فحصها"
-                className="w-full h-full object-contain"
-              />
+              {activeMediaType === 'video' ? (
+                <video
+                  src={activeImage}
+                  controls
+                  autoPlay
+                  loop
+                  className="w-full h-full object-contain"
+                />
+              ) : (
+                <img
+                  src={activeImage}
+                  alt="عينة القمح المراد فحصها"
+                  className="w-full h-full object-contain"
+                />
+              )}
 
               {/* Scanning HUD Overlay animation while diagnosing */}
               {isDiagnosing && (

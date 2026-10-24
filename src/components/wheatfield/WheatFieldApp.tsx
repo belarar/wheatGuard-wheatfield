@@ -123,9 +123,22 @@ export const WheatFieldApp: React.FC<WheatFieldAppProps> = ({
     return () => clearInterval(interval);
   }, [isAutoPatrolling, currentParcel.center]);
 
+  // Custom user media
+  const [activeCustomMedia, setActiveCustomMedia] = useState<{
+    dataUrl: string;
+    type: 'image' | 'video';
+    label: string;
+  } | null>(null);
+
   // Transmit current packet to WheatGuard
-  const handleTransmit = () => {
+  const handleTransmit = (overrideMedia?: { dataUrl: string; type: 'image' | 'video'; label?: string }) => {
     setIsTransmitting(true);
+
+    const mediaToTransmit = overrideMedia || activeCustomMedia || {
+      dataUrl: activeSample.imageUrl,
+      type: 'image' as const,
+      label: `لقطة درون: ${activeSample.title}`,
+    };
 
     const packet: TelemetryPacket = {
       id: `pkt-${Date.now()}-${Math.random().toString(36).substr(2, 5)}`,
@@ -136,11 +149,11 @@ export const WheatFieldApp: React.FC<WheatFieldAppProps> = ({
       speedKmh: droneState.speedKmh,
       weather: { ...weather },
       capturedMedia: {
-        type: 'image',
-        dataUrl: activeSample.imageUrl,
-        label: `لقطة درون: ${activeSample.title}`,
+        type: mediaToTransmit.type,
+        dataUrl: mediaToTransmit.dataUrl,
+        label: mediaToTransmit.label,
       },
-      diagnosis: activeSample.precomputedDiagnosis as any,
+      diagnosis: activeCustomMedia ? undefined : (activeSample.precomputedDiagnosis as any),
     };
 
     // Forward to parent ecosystem handler
@@ -284,10 +297,17 @@ export const WheatFieldApp: React.FC<WheatFieldAppProps> = ({
           <DroneFPVCockpit
             droneState={droneState}
             activeSample={activeSample}
-            onCapturePhoto={(dataUrl) => handleTransmit()}
-            onRecordVideo={(dataUrl) => handleTransmit()}
-            onTransmitToWheatGuard={handleTransmit}
+            onCapturePhoto={(dataUrl) =>
+              handleTransmit({ dataUrl, type: 'image', label: `لقطة فورية: ${activeSample.title}` })
+            }
+            onRecordVideo={(dataUrl) =>
+              handleTransmit({ dataUrl, type: 'video', label: `مقطع مسح جوي: ${activeSample.title}` })
+            }
+            onTransmitToWheatGuard={() => handleTransmit()}
             isTransmitting={isTransmitting}
+            onCustomMediaLoaded={(mediaUrl, mediaType, label) => {
+              setActiveCustomMedia({ dataUrl: mediaUrl, type: mediaType, label });
+            }}
           />
 
           {/* Hover Target Zone Selector (Wheat Condition beneath the drone) */}
