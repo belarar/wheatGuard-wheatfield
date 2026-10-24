@@ -209,10 +209,30 @@ function generateClassVisualSvg(cls: WheatClassInfo): string {
   return `data:image/svg+xml;utf8,${encodeURIComponent(svg)}`;
 }
 
+// Coordinates for each class bounding box [ymin, xmin, ymax, xmax] normalized 0-1000
+const SAMPLE_BOX_COORDS: Record<number, [number, number, number, number][]> = {
+  0: [[380, 430, 760, 570]], // Aphid
+  1: [[250, 430, 860, 570]], // Black Rust
+  2: [[160, 380, 460, 620]], // Blast
+  3: [[250, 340, 790, 660]], // Brown Rust
+  4: [[520, 380, 930, 620]], // Common Root Rot
+  5: [[190, 380, 680, 620]], // Fusarium Head
+  6: [[300, 340, 760, 660]], // Leaf Blight
+  7: [[220, 340, 760, 660]], // Mildew
+  8: [[140, 360, 820, 600]], // Mite
+  9: [[240, 340, 820, 660]], // Septoria
+  10: [[180, 380, 700, 620]], // Smut
+  11: [[420, 420, 760, 580]], // Stem_fly
+  12: [[260, 360, 720, 640]], // Tan spot
+  13: [[180, 220, 860, 780]], // healthy_wheat
+  14: [[180, 360, 840, 640]], // yellow_rust
+};
+
 // Build all 15 captured samples dynamically from WHEAT_15_CLASSES
 export const WHEAT_DISEASE_SAMPLES: CapturedSample[] = WHEAT_15_CLASSES.map((cls, idx) => {
   const isHealthy = cls.category === 'سليم (Healthy)';
   const isCritical = cls.severityDefault.includes('شديد') || cls.severityDefault.includes('خطر');
+  const boxes = SAMPLE_BOX_COORDS[cls.id] || [[250, 350, 750, 650]];
 
   return {
     id: `sample-class-${cls.id}-${cls.labelKey.toLowerCase().replace(/[^a-z0-9]/g, '_')}`,
@@ -234,6 +254,7 @@ export const WHEAT_DISEASE_SAMPLES: CapturedSample[] = WHEAT_15_CLASSES.map((cls
       uvIndex: 5,
     },
     precomputedDiagnosis: {
+      predictedClassId: cls.id,
       diseaseDetected: !isHealthy,
       isHealthy,
       diseaseNameAr: cls.nameAr,
@@ -244,6 +265,13 @@ export const WHEAT_DISEASE_SAMPLES: CapturedSample[] = WHEAT_15_CLASSES.map((cls
       severityLevel: cls.severityDefault,
       affectedPlantPart: cls.affectedPart,
       symptomsIdentified: cls.symptoms,
+      boundingBoxes: boxes.map((box) => ({
+        box_2d: box,
+        labelAr: cls.nameAr,
+        labelEn: cls.nameEn,
+        classId: cls.id,
+        confidence: isHealthy ? 99 : 96 - (idx % 4),
+      })),
       microclimateRiskAnalysis: cls.weatherRisk,
       treatmentRecommendations: {
         chemicalAction: cls.chemicalTreatment,

@@ -15,6 +15,7 @@ import {
   Thermometer,
   ShieldAlert,
   Info,
+  Target,
 } from 'lucide-react';
 
 interface DiagnosisCardProps {
@@ -207,6 +208,50 @@ export const DiagnosisCard: React.FC<DiagnosisCardProps> = ({
             </span>
           </div>
         </div>
+
+        {/* Bounding Boxes Targets List */}
+        {diagnosis.boundingBoxes && diagnosis.boundingBoxes.length > 0 && (
+          <div className="p-4 rounded-xl bg-slate-950/50 border border-slate-800">
+            <div className="flex items-center justify-between mb-2.5">
+              <h4 className="text-xs font-bold text-slate-200 flex items-center gap-2">
+                <Target className="w-4 h-4 text-emerald-400" />
+                <span>مربعات الإحاطة وتحديد البؤر المرصودة ({diagnosis.boundingBoxes.length} بؤرة):</span>
+              </h4>
+              <span className="text-[11px] text-amber-300 font-mono">
+                {diagnosis.boundingBoxes.length} Targets Locked
+              </span>
+            </div>
+
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
+              {diagnosis.boundingBoxes.map((b, idx) => (
+                <div
+                  key={idx}
+                  className="p-2.5 rounded-lg bg-slate-900 border border-slate-800 flex items-center justify-between text-xs"
+                >
+                  <div className="flex items-center gap-2.5">
+                    <span
+                      className={`w-3 h-3 rounded-full shrink-0 ${
+                        b.classId === 13 ? 'bg-emerald-500' : 'bg-rose-500 animate-pulse'
+                      }`}
+                    />
+                    <div>
+                      <div className="font-bold text-slate-100 flex items-center gap-1.5">
+                        <span>{b.labelAr}</span>
+                        <span className="text-[10px] text-slate-400 font-mono">({b.labelEn})</span>
+                      </div>
+                      <div className="text-[10px] text-slate-400 font-mono mt-0.5">
+                        صنف ID: {b.classId} &bull; إحداثيات: [{b.box_2d.join(', ')}]
+                      </div>
+                    </div>
+                  </div>
+                  <div className="px-2 py-1 rounded bg-black/70 text-amber-300 font-mono font-bold text-xs border border-amber-400/20">
+                    {b.confidence}%
+                  </div>
+                </div>
+              ))}
+            </div>
+          </div>
+        )}
 
         {/* Symptoms & Evidence Box */}
         {diagnosis.symptomsIdentified && diagnosis.symptomsIdentified.length > 0 && (

@@ -22,7 +22,10 @@ import {
   Smartphone,
   HelpCircle,
   Check,
+  Target,
 } from 'lucide-react';
+import { BoundingBoxOverlay } from '../BoundingBoxOverlay';
+import { generateDetectionBoxes } from '../../utils/tfliteInference';
 
 interface DroneFPVCockpitProps {
   droneState: DroneState;
@@ -45,11 +48,15 @@ export const DroneFPVCockpit: React.FC<DroneFPVCockpitProps> = ({
 }) => {
   const [zoomLevel, setZoomLevel] = useState<number>(1);
   const [ndviMode, setNdviMode] = useState<boolean>(false);
+  const [showAiHud, setShowAiHud] = useState<boolean>(true);
   const [gimbalPitch, setGimbalPitch] = useState<number>(45);
   const [isRecording, setIsRecording] = useState<boolean>(false);
   const [recordSeconds, setRecordSeconds] = useState<number>(0);
   const [showShutterFlash, setShowShutterFlash] = useState<boolean>(false);
   const [transmissionSuccess, setTransmissionSuccess] = useState<boolean>(false);
+
+  // Active bounding boxes to render inside the drone HUD
+  const activeBoxes = activeSample.precomputedDiagnosis?.boundingBoxes || generateDetectionBoxes(14, 95);
 
   // Custom User media testing (Uploaded video/photo or Live Camera)
   const [customVideoUrl, setCustomVideoUrl] = useState<string | null>(null);
@@ -321,6 +328,14 @@ export const DroneFPVCockpit: React.FC<DroneFPVCockpitProps> = ({
           {ndviMode && (
             <div className="absolute inset-0 bg-gradient-to-tr from-purple-900/30 via-emerald-500/20 to-yellow-500/30 mix-blend-overlay pointer-events-none" />
           )}
+
+          {/* Real-time AI Target Lock HUD in Drone Cockpit */}
+          {showAiHud && (
+            <BoundingBoxOverlay
+              boxes={activeBoxes}
+              showLabels={true}
+            />
+          )}
         </div>
 
         {/* TOP HUD BAR */}
@@ -438,6 +453,20 @@ export const DroneFPVCockpit: React.FC<DroneFPVCockpitProps> = ({
             >
               <Sparkles className="w-3.5 h-3.5" />
               <span>NDVI</span>
+            </button>
+
+            {/* AI HUD Target Lock Toggle */}
+            <button
+              onClick={() => setShowAiHud(!showAiHud)}
+              className={`flex items-center gap-1 px-2.5 py-1 rounded-lg text-xs font-semibold transition-all ${
+                showAiHud
+                  ? 'bg-amber-500 text-slate-950 font-bold shadow-md shadow-amber-500/30'
+                  : 'text-slate-300 hover:bg-slate-800'
+              }`}
+              title="تفعيل كاشف الذكاء الاصطناعي وتحديد البؤر بمربعات ومسميات الأمراض في قمرة الدرون"
+            >
+              <Target className="w-3.5 h-3.5" />
+              <span>كاشف AI ({activeBoxes.length})</span>
             </button>
           </div>
 

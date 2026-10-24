@@ -26,7 +26,16 @@ export interface WeatherTelemetry {
   sprayAdvice: string;
 }
 
+export interface BoundingBox {
+  box_2d: [number, number, number, number]; // [ymin, xmin, ymax, xmax] 0-1000 normalized
+  labelAr: string;
+  labelEn: string;
+  classId: number;
+  confidence: number;
+}
+
 export interface WheatDiseaseDiagnosis {
+  predictedClassId?: number;
   diseaseDetected: boolean;
   isHealthy: boolean;
   diseaseNameAr: string;
@@ -37,6 +46,7 @@ export interface WheatDiseaseDiagnosis {
   severityLevel: 'منخفض (Low)' | 'متوسط (Medium)' | 'شديد / خطر (Critical)' | 'لا يوجد' | string;
   affectedPlantPart: string;
   symptomsIdentified: string[];
+  boundingBoxes?: BoundingBox[];
   microclimateRiskAnalysis: string;
   treatmentRecommendations: {
     chemicalAction: string;

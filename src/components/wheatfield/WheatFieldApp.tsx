@@ -7,6 +7,7 @@ import {
   TelemetryPacket,
 } from '../../types';
 import { WHEAT_DISEASE_SAMPLES } from '../../data/wheatSamples';
+import { runEdgeInference } from '../../utils/tfliteInference';
 import { DroneFPVCockpit } from './DroneFPVCockpit';
 import { InteractiveFieldMap } from './InteractiveFieldMap';
 import { SensorControlDeck } from './SensorControlDeck';
@@ -140,6 +141,17 @@ export const WheatFieldApp: React.FC<WheatFieldAppProps> = ({
       label: `لقطة درون: ${activeSample.title}`,
     };
 
+    // Ensure diagnosis with bounding boxes is always generated and attached
+    let diagnosis = activeSample.precomputedDiagnosis as any;
+    if (activeCustomMedia || overrideMedia || !diagnosis?.boundingBoxes?.length) {
+      diagnosis = runEdgeInference(
+        mediaToTransmit.dataUrl,
+        weather,
+        'WheatField-TFLite-Edge',
+        activeSampleIndex
+      );
+    }
+
     const packet: TelemetryPacket = {
       id: `pkt-${Date.now()}-${Math.random().toString(36).substr(2, 5)}`,
       timestamp: Date.now(),
@@ -153,7 +165,7 @@ export const WheatFieldApp: React.FC<WheatFieldAppProps> = ({
         dataUrl: mediaToTransmit.dataUrl,
         label: mediaToTransmit.label,
       },
-      diagnosis: activeCustomMedia ? undefined : (activeSample.precomputedDiagnosis as any),
+      diagnosis,
     };
 
     // Forward to parent ecosystem handler

@@ -312,9 +312,12 @@ export default function App() {
           });
           setCustomModelConfig((prev) => ({
             ...prev,
+            enabled: true,
             modelName: info.name,
             framework: 'Custom',
           }));
+          setToastMessage(`تم تحميل وتفعيل نموذج [${info.name}] بنجاح لكشف ورسم مربعات الإصابة!`);
+          setTimeout(() => setToastMessage(null), 5000);
         }}
       />
 
