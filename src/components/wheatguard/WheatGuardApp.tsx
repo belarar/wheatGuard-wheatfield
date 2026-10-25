@@ -5,9 +5,14 @@ import {
   CapturedSample,
   CustomModelConfig,
   FieldParcel,
+  PreprocessingMetrics,
 } from '../../types';
 import { WHEAT_DISEASE_SAMPLES } from '../../data/wheatSamples';
-import { runEdgeInference, extract640FrameFromElement } from '../../utils/tfliteInference';
+import {
+  runEdgeInference,
+  extract640FrameFromElement,
+  preprocess640Image,
+} from '../../utils/tfliteInference';
 import { DiagnosisCard } from './DiagnosisCard';
 import { DiseaseAlertsFeed } from './DiseaseAlertsFeed';
 import { HealthHeatmap } from './HealthHeatmap';
@@ -27,6 +32,11 @@ import {
   Crosshair,
   Layers,
   Target,
+  Sun,
+  SlidersHorizontal,
+  X,
+  Eye,
+  Check,
 } from 'lucide-react';
 import { BoundingBoxOverlay } from '../BoundingBoxOverlay';
 
@@ -49,6 +59,7 @@ export const WheatGuardApp: React.FC<WheatGuardAppProps> = ({
 }) => {
   // Current active sample for diagnosis
   const [activeImage, setActiveImage] = useState<string>(WHEAT_DISEASE_SAMPLES[0].imageUrl);
+  const [rawImage, setRawImage] = useState<string>(WHEAT_DISEASE_SAMPLES[0].imageUrl);
   const [activeMediaType, setActiveMediaType] = useState<'image' | 'video'>('image');
   const [showBoundingBoxes, setShowBoundingBoxes] = useState<boolean>(true);
   const [activeDiagnosis, setActiveDiagnosis] = useState<WheatDiseaseDiagnosis | null>(
@@ -59,6 +70,12 @@ export const WheatGuardApp: React.FC<WheatGuardAppProps> = ({
   const [selectedPacketId, setSelectedPacketId] = useState<string | undefined>(undefined);
   const [sourceLabel, setSourceLabel] = useState<string>('عينة الصدأ الأصفر الميدانية');
   const [errorMsg, setErrorMsg] = useState<string | null>(null);
+
+  // Preprocessing (White balance + Contrast dynamic range expansion)
+  const [isPreprocessingEnabled, setIsPreprocessingEnabled] = useState<boolean>(true);
+  const [activeViewMode, setActiveViewMode] = useState<'preprocessed' | 'original'>('preprocessed');
+  const [activePreprocessingMetrics, setActivePreprocessingMetrics] = useState<PreprocessingMetrics | null>(null);
+  const [showComparisonModal, setShowComparisonModal] = useState<boolean>(false);
 
   const fileInputRef = useRef<HTMLInputElement>(null);
   const prevLatestPacketIdRef = useRef<string | undefined>(incomingPackets[0]?.id);
@@ -72,6 +89,7 @@ export const WheatGuardApp: React.FC<WheatGuardAppProps> = ({
       setSelectedSampleId('');
 
       if (latest.capturedMedia?.dataUrl) {
+        setRawImage(latest.capturedMedia.dataUrl);
         setActiveImage(latest.capturedMedia.dataUrl);
         setActiveMediaType(latest.capturedMedia.type || 'image');
       }
@@ -93,10 +111,38 @@ export const WheatGuardApp: React.FC<WheatGuardAppProps> = ({
     healthy: incomingPackets.filter((p) => p.diagnosis?.isHealthy).length + 2,
   };
 
-  // Run AI Diagnosis via backend API or Edge AI calibrated for 640x640 input resolution
+  // Run AI Diagnosis with real-time Preprocessing (White Balance + Dynamic Contrast)
   const handleRunDiagnosis = async (imageDataUrl: string, sampleTitle?: string) => {
     setIsDiagnosing(true);
     setErrorMsg(null);
+
+    // 1. Run Preprocessing to eliminate warm sunlight bias and amplify contrast
+    let finalPayloadImage = imageDataUrl;
+    let currentMetrics: PreprocessingMetrics | undefined;
+
+    try {
+      const prep = await preprocess640Image(imageDataUrl, {
+        enabled: isPreprocessingEnabled,
+        autoWhiteBalance: true,
+        contrastStretching: true,
+        whiteBalanceStrength: 0.75,
+        contrastClipPercentile: 1.5,
+      });
+
+      currentMetrics = prep.metrics;
+      setActivePreprocessingMetrics(prep.metrics);
+      setRawImage(prep.originalDataUrl);
+
+      if (isPreprocessingEnabled) {
+        finalPayloadImage = prep.preprocessedDataUrl;
+        setActiveImage(prep.preprocessedDataUrl);
+      } else {
+        finalPayloadImage = prep.originalDataUrl;
+        setActiveImage(prep.originalDataUrl);
+      }
+    } catch (e) {
+      console.warn('Preprocessing skipped for non-standard image:', e);
+    }
 
     // Get current weather from latest drone packet or default
     const latestWeather = incomingPackets[0]?.weather || {
@@ -116,10 +162,11 @@ export const WheatGuardApp: React.FC<WheatGuardAppProps> = ({
           'Content-Type': 'application/json',
         },
         body: JSON.stringify({
-          imageBase64: imageDataUrl,
+          imageBase64: finalPayloadImage,
           weatherData: latestWeather,
           customModelConfig,
           source: sampleTitle || 'فحص WheatGuard 640x640',
+          preprocessing: currentMetrics,
         }),
       });
 
@@ -129,8 +176,12 @@ export const WheatGuardApp: React.FC<WheatGuardAppProps> = ({
 
       const data = await response.json();
       if (data.success && data.diagnosis) {
-        setActiveDiagnosis(data.diagnosis);
-        setSourceLabel(data.modelName || 'نموذج الذكاء الاصطناعي (640×640)');
+        const diagWithPrep: WheatDiseaseDiagnosis = {
+          ...data.diagnosis,
+          preprocessing: data.diagnosis.preprocessing || currentMetrics,
+        };
+        setActiveDiagnosis(diagWithPrep);
+        setSourceLabel(data.modelName || 'نموذج الذكاء الاصطناعي (640×640 معالج)');
       } else {
         throw new Error(data.error || 'لم يتمكن النموذج من استخراج نتيجة صالحة');
       }
@@ -139,11 +190,12 @@ export const WheatGuardApp: React.FC<WheatGuardAppProps> = ({
       // Guarantee bounding box detection & pathology classification via calibrated Edge AI engine
       const targetHint = selectedSampleId ? WHEAT_DISEASE_SAMPLES.findIndex((s) => s.id === selectedSampleId) : undefined;
       const edgeDiag = runEdgeInference(
-        imageDataUrl,
+        finalPayloadImage,
         latestWeather,
         customModelConfig.modelName || 'نموذج الكشف TFLite الميداني (640×640)',
         targetHint !== -1 && targetHint !== undefined ? targetHint : undefined,
-        sampleTitle
+        sampleTitle,
+        currentMetrics
       );
       setActiveDiagnosis(edgeDiag);
       setSourceLabel(customModelConfig.modelName || 'نموذج الكشف TFLite الميداني (640×640)');
@@ -156,14 +208,11 @@ export const WheatGuardApp: React.FC<WheatGuardAppProps> = ({
   const handleSelectPresetSample = (sample: CapturedSample) => {
     setSelectedSampleId(sample.id);
     setSelectedPacketId(undefined);
+    setRawImage(sample.imageUrl);
     setActiveImage(sample.imageUrl);
     setActiveMediaType('image');
     setSourceLabel(sample.title);
-    if (sample.precomputedDiagnosis) {
-      setActiveDiagnosis(sample.precomputedDiagnosis as WheatDiseaseDiagnosis);
-    } else {
-      handleRunDiagnosis(sample.imageUrl, sample.title);
-    }
+    handleRunDiagnosis(sample.imageUrl, sample.title);
   };
 
   // Select a packet from drone feed
@@ -209,7 +258,11 @@ export const WheatGuardApp: React.FC<WheatGuardAppProps> = ({
           vid.currentTime = Math.min(0.5, vid.duration / 2);
         };
         vid.onseeked = () => {
-          const frame640 = extract640FrameFromElement(vid);
+          const { dataUrl: frame640 } = extract640FrameFromElement(vid, {
+            enabled: isPreprocessingEnabled,
+            autoWhiteBalance: true,
+            contrastStretching: true,
+          });
           handleRunDiagnosis(frame640 || dataUrl, file.name);
         };
         vid.onerror = () => {
@@ -222,7 +275,11 @@ export const WheatGuardApp: React.FC<WheatGuardAppProps> = ({
         const img = new Image();
         img.src = dataUrl;
         img.onload = () => {
-          const frame640 = extract640FrameFromElement(img);
+          const { dataUrl: frame640 } = extract640FrameFromElement(img, {
+            enabled: isPreprocessingEnabled,
+            autoWhiteBalance: true,
+            contrastStretching: true,
+          });
           setActiveImage(frame640 || dataUrl);
           handleRunDiagnosis(frame640 || dataUrl, file.name);
         };
@@ -332,11 +389,104 @@ export const WheatGuardApp: React.FC<WheatGuardAppProps> = ({
               </div>
             </div>
 
+            {/* Preprocessing & Anti-Bias Calibration Bar */}
+            <div className="mb-3.5 p-3 rounded-xl bg-slate-950/80 border border-cyan-500/30 flex flex-wrap items-center justify-between gap-3 text-xs">
+              <div className="flex flex-wrap items-center gap-2.5">
+                {/* Preprocessing Toggle */}
+                <button
+                  onClick={() => {
+                    const nextVal = !isPreprocessingEnabled;
+                    setIsPreprocessingEnabled(nextVal);
+                    if (nextVal) {
+                      handleRunDiagnosis(rawImage || activeImage, sourceLabel);
+                    } else {
+                      setActiveImage(rawImage);
+                    }
+                  }}
+                  className={`flex items-center gap-2 px-3 py-1.5 rounded-lg font-bold border transition-all ${
+                    isPreprocessingEnabled
+                      ? 'bg-cyan-500/20 text-cyan-300 border-cyan-500/50 shadow-sm shadow-cyan-500/20'
+                      : 'bg-slate-800 text-slate-400 border-slate-700'
+                  }`}
+                  title="تفعيل/تعطيل خوارزميات توازن البياض والتباين لمكافحة التحيز"
+                >
+                  <SlidersHorizontal className="w-3.5 h-3.5 text-cyan-400" />
+                  <span>معالجة توازن البياض والتباين:</span>
+                  <span
+                    className={`text-[10px] px-2 py-0.5 rounded font-mono font-black ${
+                      isPreprocessingEnabled
+                        ? 'bg-cyan-400 text-slate-950'
+                        : 'bg-slate-700 text-slate-300'
+                    }`}
+                  >
+                    {isPreprocessingEnabled ? 'نشط (D65)' : 'معطل'}
+                  </span>
+                </button>
+
+                {/* Switch between Preprocessed and Raw */}
+                {isPreprocessingEnabled && (
+                  <div className="flex items-center rounded-lg bg-slate-900 border border-slate-800 p-0.5">
+                    <button
+                      onClick={() => setActiveViewMode('preprocessed')}
+                      className={`px-2.5 py-1 rounded-md text-[11px] font-semibold transition-all ${
+                        activeViewMode === 'preprocessed'
+                          ? 'bg-cyan-600 text-white shadow-sm'
+                          : 'text-slate-400 hover:text-slate-200'
+                      }`}
+                    >
+                      العينة المعالجة
+                    </button>
+                    <button
+                      onClick={() => setActiveViewMode('original')}
+                      className={`px-2.5 py-1 rounded-md text-[11px] font-semibold transition-all ${
+                        activeViewMode === 'original'
+                          ? 'bg-amber-600 text-white shadow-sm'
+                          : 'text-slate-400 hover:text-slate-200'
+                      }`}
+                    >
+                      العينة الخام
+                    </button>
+                  </div>
+                )}
+
+                {/* Compare Button */}
+                <button
+                  onClick={() => setShowComparisonModal(true)}
+                  className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-slate-800 hover:bg-slate-700 text-slate-200 border border-slate-700 text-[11px] font-semibold transition-colors shadow-sm"
+                  title="مقارنة الصورة الأصلية مع المعالجة جنباً إلى جنب"
+                >
+                  <Eye className="w-3.5 h-3.5 text-cyan-400" />
+                  <span>مقارنة قبل / بعد (A/B Test)</span>
+                </button>
+              </div>
+
+              {/* Live Preprocessing Status Indicator */}
+              <div className="flex items-center gap-2.5 text-[11px] font-mono text-slate-300">
+                {activePreprocessingMetrics?.applied ? (
+                  <>
+                    <span className="flex items-center gap-1 text-amber-300 bg-amber-950/40 px-2 py-0.5 rounded border border-amber-500/20">
+                      <Sun className="w-3 h-3 text-amber-400" />
+                      <span>{activePreprocessingMetrics.whiteBalanceCorrection.colorTempShiftKelvin}</span>
+                    </span>
+                    <span className="flex items-center gap-1 text-emerald-300 bg-emerald-950/40 px-2 py-0.5 rounded border border-emerald-500/20">
+                      <Sparkles className="w-3 h-3 text-emerald-400" />
+                      <span>تباين +{activePreprocessingMetrics.contrastCorrection.contrastGainPercent}%</span>
+                    </span>
+                    <span className="text-cyan-300 hidden md:inline bg-cyan-950/40 px-2 py-0.5 rounded border border-cyan-500/20">
+                      640×640 Tensor
+                    </span>
+                  </>
+                ) : (
+                  <span className="text-slate-500">جاهز للمعايرة المسبقة</span>
+                )}
+              </div>
+            </div>
+
             {/* Image/Video Preview Container */}
             <div className="relative aspect-video w-full bg-slate-950 rounded-xl overflow-hidden border border-slate-800 flex items-center justify-center shadow-inner">
               {activeMediaType === 'video' ? (
                 <video
-                  src={activeImage}
+                  src={activeViewMode === 'preprocessed' ? activeImage : rawImage}
                   controls
                   autoPlay
                   loop
@@ -344,7 +494,7 @@ export const WheatGuardApp: React.FC<WheatGuardAppProps> = ({
                 />
               ) : (
                 <img
-                  src={activeImage}
+                  src={activeViewMode === 'preprocessed' ? activeImage : rawImage}
                   alt="عينة القمح المراد فحصها"
                   className="w-full h-full object-cover"
                 />
@@ -357,6 +507,20 @@ export const WheatGuardApp: React.FC<WheatGuardAppProps> = ({
                   showLabels={true}
                 />
               )}
+
+              {/* View mode indicator tag */}
+              <div className="absolute top-3 left-3 bg-slate-950/90 backdrop-blur-md px-2.5 py-1 rounded-lg border border-slate-700 text-[10px] font-mono z-20 flex items-center gap-1.5">
+                <span
+                  className={`w-2 h-2 rounded-full ${
+                    activeViewMode === 'preprocessed' ? 'bg-cyan-400' : 'bg-amber-400'
+                  }`}
+                />
+                <span className="text-slate-200">
+                  {activeViewMode === 'preprocessed'
+                    ? 'العينة المعالجة (معايرة D65 + تباين)'
+                    : 'العينة الأصلية (كاميرا خام)'}
+                </span>
+              </div>
 
               {/* Scanning HUD Overlay animation while diagnosing */}
               {isDiagnosing && (
@@ -517,6 +681,146 @@ export const WheatGuardApp: React.FC<WheatGuardAppProps> = ({
           />
         </div>
       </div>
+
+      {/* Comparison Modal (A/B Test: Raw vs Preprocessed) */}
+      {showComparisonModal && (
+        <div className="fixed inset-0 z-50 bg-slate-950/80 backdrop-blur-md flex items-center justify-center p-3 sm:p-6 animate-fade-in">
+          <div className="bg-slate-900 border border-slate-800 rounded-2xl w-full max-w-4xl max-h-[90vh] overflow-y-auto shadow-2xl flex flex-col">
+            {/* Modal Header */}
+            <div className="p-4 sm:p-5 border-b border-slate-800 flex items-center justify-between">
+              <div className="flex items-center gap-3">
+                <div className="p-2 rounded-xl bg-cyan-500/20 text-cyan-300 border border-cyan-500/40">
+                  <SlidersHorizontal className="w-5 h-5" />
+                </div>
+                <div>
+                  <h3 className="text-base sm:text-lg font-bold text-slate-100 flex items-center gap-2">
+                    <span>مقارنة المعالجة المسبقة للمدخلات (A/B Calibration Test)</span>
+                    <span className="text-[10px] px-2 py-0.5 rounded-full bg-cyan-500/20 text-cyan-300 border border-cyan-500/40 font-mono">
+                      Anti-Bias Active
+                    </span>
+                  </h3>
+                  <p className="text-xs text-slate-400 mt-0.5">
+                    معايرة توازن اللون الأبيض والتباين الديناميكي للصور لتقليل التحيز لنتائج محددة كالصدأ الأصفر
+                  </p>
+                </div>
+              </div>
+
+              <button
+                onClick={() => setShowComparisonModal(false)}
+                className="p-2 rounded-xl bg-slate-800 hover:bg-slate-700 text-slate-400 hover:text-slate-100 transition-colors"
+              >
+                <X className="w-5 h-5" />
+              </button>
+            </div>
+
+            {/* Modal Content - Side by side comparison */}
+            <div className="p-4 sm:p-6 space-y-5">
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                {/* Before: Raw Camera Image */}
+                <div className="space-y-2">
+                  <div className="flex items-center justify-between">
+                    <span className="text-xs font-bold text-amber-300 flex items-center gap-1.5">
+                      <span className="w-2.5 h-2.5 rounded-full bg-amber-400" />
+                      قبل المعالجة (الصورة الخام من الكاميرا)
+                    </span>
+                    <span className="text-[10px] font-mono text-slate-500">Raw Capture</span>
+                  </div>
+                  <div className="relative aspect-square w-full rounded-xl overflow-hidden bg-slate-950 border border-amber-500/30 shadow-inner">
+                    <img
+                      src={rawImage}
+                      alt="الصورة الخام قبل المعالجة"
+                      className="w-full h-full object-cover"
+                    />
+                    <div className="absolute bottom-2 left-2 bg-slate-950/90 text-amber-300 text-[10px] px-2 py-1 rounded font-mono border border-amber-500/30">
+                      وهج الشمس الذهبي الطبيعي
+                    </div>
+                  </div>
+                  <p className="text-[11px] text-slate-400 leading-relaxed">
+                    تتأثر الصورة بأشعة الشمس الدافئة وانعكاسات القش الجاف، مما قد يضلل النموذج ويجعله ينحاز لاعتبار النبات مصاباً بـ "الصدأ الأصفر".
+                  </p>
+                </div>
+
+                {/* After: Calibrated Preprocessed Image */}
+                <div className="space-y-2">
+                  <div className="flex items-center justify-between">
+                    <span className="text-xs font-bold text-cyan-300 flex items-center gap-1.5">
+                      <span className="w-2.5 h-2.5 rounded-full bg-cyan-400" />
+                      بعد المعالجة (معايرة D65 + تباين ديناميكي)
+                    </span>
+                    <span className="text-[10px] font-mono text-cyan-400">Preprocessed (640×640)</span>
+                  </div>
+                  <div className="relative aspect-square w-full rounded-xl overflow-hidden bg-slate-950 border border-cyan-500/50 shadow-inner ring-1 ring-cyan-500/20">
+                    <img
+                      src={activeImage}
+                      alt="الصورة بعد المعالجة وتوازن البياض والتباين"
+                      className="w-full h-full object-cover"
+                    />
+                    <div className="absolute bottom-2 left-2 bg-slate-950/90 text-cyan-300 text-[10px] px-2 py-1 rounded font-mono border border-cyan-500/30">
+                      طيف محايد + تباين تفصيلي
+                    </div>
+                  </div>
+                  <p className="text-[11px] text-slate-400 leading-relaxed">
+                    تم تحييد الصبغة الصفراء وتوسيع المجال اللوني الديناميكي، مما يبرز حواف البثرات الفطرية الدقيقة وكتل حشرات المن بدقة لكافة الأصناف الـ 15.
+                  </p>
+                </div>
+              </div>
+
+              {/* Preprocessing Telemetry Details */}
+              {activePreprocessingMetrics && (
+                <div className="p-4 rounded-xl bg-slate-950 border border-slate-800 space-y-3">
+                  <h4 className="text-xs font-bold text-slate-200">
+                    القياسات الفيزيائية لمعايرة الاستدلال:
+                  </h4>
+                  <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 text-xs">
+                    <div className="p-2.5 rounded-lg bg-slate-900 border border-slate-800">
+                      <span className="text-[10px] text-slate-400 block mb-0.5">تصحيح توازن البياض:</span>
+                      <span className="font-mono text-amber-300 font-bold">
+                        {activePreprocessingMetrics.whiteBalanceCorrection.colorTempShiftKelvin}
+                      </span>
+                      <div className="text-[10px] text-slate-400 mt-1">
+                        معاملات القنوات: R: {activePreprocessingMetrics.whiteBalanceCorrection.gainR}x | B: {activePreprocessingMetrics.whiteBalanceCorrection.gainB}x
+                      </div>
+                    </div>
+
+                    <div className="p-2.5 rounded-lg bg-slate-900 border border-slate-800">
+                      <span className="text-[10px] text-slate-400 block mb-0.5">تمديد التباين اللوني:</span>
+                      <span className="font-mono text-emerald-300 font-bold">
+                        +{activePreprocessingMetrics.contrastCorrection.contrastGainPercent}% تباين تفصيلي
+                      </span>
+                      <div className="text-[10px] text-slate-400 mt-1">
+                        المجال: [{activePreprocessingMetrics.contrastCorrection.originalMinLum} - {activePreprocessingMetrics.contrastCorrection.originalMaxLum}] إلى [0 - 255]
+                      </div>
+                    </div>
+
+                    <div className="p-2.5 rounded-lg bg-slate-900 border border-slate-800">
+                      <span className="text-[10px] text-slate-400 block mb-0.5">هندسة التنسور:</span>
+                      <span className="font-mono text-cyan-300 font-bold">
+                        640×640 بكسل
+                      </span>
+                      <div className="text-[10px] text-slate-400 mt-1">
+                        تثبيت أبعاد نصل الورقة والسنبلة دون تشويه هندسي
+                      </div>
+                    </div>
+                  </div>
+                </div>
+              )}
+            </div>
+
+            {/* Modal Footer */}
+            <div className="p-4 border-t border-slate-800 flex items-center justify-between">
+              <span className="text-xs text-slate-400">
+                المعالجة المسبقة مفعلة تلقائياً لجميع عمليات الاستدلال
+              </span>
+              <button
+                onClick={() => setShowComparisonModal(false)}
+                className="px-4 py-2 rounded-xl bg-cyan-600 hover:bg-cyan-500 text-white text-xs font-bold transition-colors"
+              >
+                إغلاق المقارنة
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 };

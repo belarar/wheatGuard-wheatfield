@@ -34,6 +34,38 @@ export interface BoundingBox {
   confidence: number;
 }
 
+export interface PreprocessingOptions {
+  enabled?: boolean;
+  autoWhiteBalance?: boolean;
+  contrastStretching?: boolean;
+  whiteBalanceStrength?: number; // 0.0 to 1.0 (default 0.75)
+  contrastClipPercentile?: number; // 0.5 to 3.0 (default 1.5%)
+  targetD65Daylight?: boolean;
+}
+
+export interface PreprocessingMetrics {
+  applied: boolean;
+  whiteBalanceCorrection: {
+    gainR: number;
+    gainG: number;
+    gainB: number;
+    colorTempShiftKelvin: string;
+    neutralizedCast: string; // e.g. "وهج الشمس الذهبي (Warm Sunlight)"
+  };
+  contrastCorrection: {
+    originalMinLum: number;
+    originalMaxLum: number;
+    contrastGainPercent: number;
+    dynamicRangeExpanded: boolean;
+  };
+  resolution: {
+    targetWidth: number;
+    targetHeight: number;
+  };
+  originalDataUrl?: string;
+  preprocessedDataUrl?: string;
+}
+
 export interface WheatDiseaseDiagnosis {
   predictedClassId?: number;
   diseaseDetected: boolean;
@@ -58,6 +90,7 @@ export interface WheatDiseaseDiagnosis {
     urgency: string;
   };
   fieldActionSummary: string;
+  preprocessing?: PreprocessingMetrics;
 }
 
 export interface CapturedSample {

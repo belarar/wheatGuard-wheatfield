@@ -16,6 +16,9 @@ import {
   ShieldAlert,
   Info,
   Target,
+  SlidersHorizontal,
+  Sun,
+  Sparkles,
 } from 'lucide-react';
 
 interface DiagnosisCardProps {
@@ -259,6 +262,80 @@ export const DiagnosisCard: React.FC<DiagnosisCardProps> = ({
                   </div>
                 </div>
               ))}
+            </div>
+          </div>
+        )}
+
+        {/* Preprocessing & Anti-Bias Calibration Telemetry */}
+        {diagnosis.preprocessing?.applied && (
+          <div className="p-4 rounded-xl bg-gradient-to-r from-slate-950/80 via-slate-900 to-cyan-950/20 border border-cyan-500/30 text-xs">
+            <div className="flex flex-wrap items-center justify-between gap-2 mb-3">
+              <div className="flex items-center gap-2">
+                <div className="p-1.5 rounded-lg bg-cyan-500/20 text-cyan-300 border border-cyan-500/40">
+                  <SlidersHorizontal className="w-4 h-4" />
+                </div>
+                <div>
+                  <h4 className="font-bold text-slate-100 flex items-center gap-2">
+                    <span>المعالجة المسبقة للمدخلات وضبط الحياد (Preprocessing Pipeline)</span>
+                    <span className="text-[10px] px-2 py-0.5 rounded-full bg-cyan-500/20 text-cyan-300 border border-cyan-500/40 font-mono">
+                      Anti-Bias Active
+                    </span>
+                  </h4>
+                  <p className="text-[11px] text-slate-400">
+                    تم ضبط توازن البياض وتوسيع التباين لمعايرة العينة وفق معيار ضوء النهار القياسي D65 قبل التمرير لنموذج الاستدلال
+                  </p>
+                </div>
+              </div>
+              <span className="text-[11px] font-mono text-cyan-400 bg-cyan-950/60 px-2 py-1 rounded border border-cyan-500/20">
+                640×640 Tensor Ready
+              </span>
+            </div>
+
+            <div className="grid grid-cols-1 sm:grid-cols-3 gap-2.5">
+              {/* White Balance telemetry */}
+              <div className="p-2.5 rounded-lg bg-slate-900/80 border border-slate-800">
+                <span className="text-[10px] text-slate-400 block mb-1">
+                  توازن اللون الأبيض (White Balance):
+                </span>
+                <div className="font-mono text-xs text-amber-300 font-bold">
+                  {diagnosis.preprocessing.whiteBalanceCorrection.colorTempShiftKelvin}
+                </div>
+                <div className="text-[10px] text-slate-400 mt-1">
+                  تحييد: {diagnosis.preprocessing.whiteBalanceCorrection.neutralizedCast}
+                </div>
+                <div className="text-[9px] text-slate-500 font-mono mt-0.5">
+                  معاملات التصحيح: R: {diagnosis.preprocessing.whiteBalanceCorrection.gainR}x | B: {diagnosis.preprocessing.whiteBalanceCorrection.gainB}x
+                </div>
+              </div>
+
+              {/* Dynamic Contrast telemetry */}
+              <div className="p-2.5 rounded-lg bg-slate-900/80 border border-slate-800">
+                <span className="text-[10px] text-slate-400 block mb-1">
+                  ضبط التباين (Dynamic Contrast):
+                </span>
+                <div className="font-mono text-xs text-emerald-400 font-bold">
+                  +{diagnosis.preprocessing.contrastCorrection.contrastGainPercent}% تباين تفصيلي
+                </div>
+                <div className="text-[10px] text-slate-400 mt-1">
+                  المجال اللوني الأصلي: [{diagnosis.preprocessing.contrastCorrection.originalMinLum} - {diagnosis.preprocessing.contrastCorrection.originalMaxLum}]
+                </div>
+                <div className="text-[9px] text-slate-500 font-mono mt-0.5">
+                  تمديد المدى الديناميكي الكامل: [0 - 255]
+                </div>
+              </div>
+
+              {/* Anti-Bias & Sensitivity Impact */}
+              <div className="p-2.5 rounded-lg bg-slate-900/80 border border-slate-800">
+                <span className="text-[10px] text-slate-400 block mb-1">
+                  أثر مكافحة التحيز والحساسية:
+                </span>
+                <div className="text-xs text-cyan-300 font-semibold">
+                  تحييد الانحياز للصدأ الأصفر
+                </div>
+                <p className="text-[10px] text-slate-400 mt-1 leading-snug">
+                  عزل انعكاس أشعة الشمس وقش القمح لإبراز بؤر الفطريات والمن في الأصناف الـ 15 بدقة
+                </p>
+              </div>
             </div>
           </div>
         )}

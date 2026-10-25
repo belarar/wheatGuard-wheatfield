@@ -25,7 +25,7 @@ import {
   Target,
 } from 'lucide-react';
 import { BoundingBoxOverlay } from '../BoundingBoxOverlay';
-import { generateDetectionBoxes } from '../../utils/tfliteInference';
+import { generateDetectionBoxes, extract640FrameFromElement } from '../../utils/tfliteInference';
 
 interface DroneFPVCockpitProps {
   droneState: DroneState;
@@ -155,42 +155,21 @@ export const DroneFPVCockpit: React.FC<DroneFPVCockpitProps> = ({
   // Capture current active frame (either live camera, uploaded video/image, or preset)
   const getActiveFrameDataUrl = (): string => {
     if (isUsingLiveCamera && liveVideoRef.current) {
-      // Grab 640x640 snapshot canvas from live camera
-      const video = liveVideoRef.current;
-      const canvas = document.createElement('canvas');
-      canvas.width = 640;
-      canvas.height = 640;
-      const ctx = canvas.getContext('2d');
-      if (ctx) {
-        ctx.fillStyle = '#0f172a';
-        ctx.fillRect(0, 0, 640, 640);
-        const vw = video.videoWidth || 640;
-        const vh = video.videoHeight || 480;
-        const scale = Math.min(640 / vw, 640 / vh);
-        const tw = vw * scale;
-        const th = vh * scale;
-        ctx.drawImage(video, 0, 0, vw, vh, (640 - tw) / 2, (640 - th) / 2, tw, th);
-        return canvas.toDataURL('image/jpeg', 0.92);
-      }
+      const { dataUrl } = extract640FrameFromElement(liveVideoRef.current, {
+        enabled: true,
+        autoWhiteBalance: true,
+        contrastStretching: true,
+      });
+      if (dataUrl) return dataUrl;
     }
 
     if (customVideoUrl && customVideoRef.current) {
-      const video = customVideoRef.current;
-      const canvas = document.createElement('canvas');
-      canvas.width = 640;
-      canvas.height = 640;
-      const ctx = canvas.getContext('2d');
-      if (ctx) {
-        ctx.fillStyle = '#0f172a';
-        ctx.fillRect(0, 0, 640, 640);
-        const vw = video.videoWidth || 640;
-        const vh = video.videoHeight || 480;
-        const scale = Math.min(640 / vw, 640 / vh);
-        const tw = vw * scale;
-        const th = vh * scale;
-        ctx.drawImage(video, 0, 0, vw, vh, (640 - tw) / 2, (640 - th) / 2, tw, th);
-        return canvas.toDataURL('image/jpeg', 0.92);
-      }
+      const { dataUrl } = extract640FrameFromElement(customVideoRef.current, {
+        enabled: true,
+        autoWhiteBalance: true,
+        contrastStretching: true,
+      });
+      if (dataUrl) return dataUrl;
     }
 
     if (customImageUrl) {
