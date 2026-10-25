@@ -141,14 +141,20 @@ export const WheatFieldApp: React.FC<WheatFieldAppProps> = ({
       label: `لقطة درون: ${activeSample.title}`,
     };
 
-    // Ensure diagnosis with bounding boxes is always generated and attached
-    let diagnosis = activeSample.precomputedDiagnosis as any;
-    if (activeCustomMedia || overrideMedia || !diagnosis?.boundingBoxes?.length) {
+    // For preset samples, use activeSampleIndex.
+    // For custom uploaded media (images or videos), do NOT pass activeSampleIndex (which was 0)!
+    // Let the inference engine inspect the label (e.g. wheat rust) and pixels to detect the true class.
+    const isCustom = Boolean(overrideMedia || activeCustomMedia);
+    const targetHint = isCustom ? undefined : activeSampleIndex;
+
+    let diagnosis = (!isCustom && activeSample.precomputedDiagnosis) ? activeSample.precomputedDiagnosis as any : null;
+    if (!diagnosis || !diagnosis?.boundingBoxes?.length) {
       diagnosis = runEdgeInference(
         mediaToTransmit.dataUrl,
         weather,
-        'WheatField-TFLite-Edge',
-        activeSampleIndex
+        'WheatField-TFLite-Edge-640',
+        targetHint,
+        mediaToTransmit.label
       );
     }
 

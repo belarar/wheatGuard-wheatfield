@@ -155,27 +155,41 @@ export const DroneFPVCockpit: React.FC<DroneFPVCockpitProps> = ({
   // Capture current active frame (either live camera, uploaded video/image, or preset)
   const getActiveFrameDataUrl = (): string => {
     if (isUsingLiveCamera && liveVideoRef.current) {
-      // Grab snapshot canvas from live camera
+      // Grab 640x640 snapshot canvas from live camera
       const video = liveVideoRef.current;
       const canvas = document.createElement('canvas');
-      canvas.width = video.videoWidth || 640;
-      canvas.height = video.videoHeight || 480;
+      canvas.width = 640;
+      canvas.height = 640;
       const ctx = canvas.getContext('2d');
       if (ctx) {
-        ctx.drawImage(video, 0, 0, canvas.width, canvas.height);
-        return canvas.toDataURL('image/jpeg', 0.85);
+        ctx.fillStyle = '#0f172a';
+        ctx.fillRect(0, 0, 640, 640);
+        const vw = video.videoWidth || 640;
+        const vh = video.videoHeight || 480;
+        const scale = Math.min(640 / vw, 640 / vh);
+        const tw = vw * scale;
+        const th = vh * scale;
+        ctx.drawImage(video, 0, 0, vw, vh, (640 - tw) / 2, (640 - th) / 2, tw, th);
+        return canvas.toDataURL('image/jpeg', 0.92);
       }
     }
 
     if (customVideoUrl && customVideoRef.current) {
       const video = customVideoRef.current;
       const canvas = document.createElement('canvas');
-      canvas.width = video.videoWidth || 640;
-      canvas.height = video.videoHeight || 480;
+      canvas.width = 640;
+      canvas.height = 640;
       const ctx = canvas.getContext('2d');
       if (ctx) {
-        ctx.drawImage(video, 0, 0, canvas.width, canvas.height);
-        return canvas.toDataURL('image/jpeg', 0.85);
+        ctx.fillStyle = '#0f172a';
+        ctx.fillRect(0, 0, 640, 640);
+        const vw = video.videoWidth || 640;
+        const vh = video.videoHeight || 480;
+        const scale = Math.min(640 / vw, 640 / vh);
+        const tw = vw * scale;
+        const th = vh * scale;
+        ctx.drawImage(video, 0, 0, vw, vh, (640 - tw) / 2, (640 - th) / 2, tw, th);
+        return canvas.toDataURL('image/jpeg', 0.92);
       }
     }
 

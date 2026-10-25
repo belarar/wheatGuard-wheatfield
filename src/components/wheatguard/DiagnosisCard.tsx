@@ -239,13 +239,23 @@ export const DiagnosisCard: React.FC<DiagnosisCardProps> = ({
                         <span>{b.labelAr}</span>
                         <span className="text-[10px] text-slate-400 font-mono">({b.labelEn})</span>
                       </div>
-                      <div className="text-[10px] text-slate-400 font-mono mt-0.5">
-                        صنف ID: {b.classId} &bull; إحداثيات: [{b.box_2d.join(', ')}]
+                      <div className="text-[10px] text-slate-400 font-mono mt-0.5 flex flex-wrap items-center gap-1.5">
+                        <span className="text-amber-400 font-bold">صنف ID: {b.classId}</span>
+                        <span>&bull;</span>
+                        <span className="text-cyan-300 font-bold bg-cyan-950/50 px-1 rounded border border-cyan-500/30">
+                          640p: [{Math.round((b.box_2d[1] / 1000) * 640)}, {Math.round((b.box_2d[0] / 1000) * 640)}, {Math.round((b.box_2d[3] / 1000) * 640)}, {Math.round((b.box_2d[2] / 1000) * 640)}]
+                        </span>
+                        <span className="text-slate-500 hidden sm:inline">
+                          (معياري: [{b.box_2d.join(', ')}])
+                        </span>
                       </div>
                     </div>
                   </div>
-                  <div className="px-2 py-1 rounded bg-black/70 text-amber-300 font-mono font-bold text-xs border border-amber-400/20">
-                    {b.confidence}%
+                  <div className="flex flex-col items-end gap-1">
+                    <span className="px-2 py-1 rounded bg-black/70 text-amber-300 font-mono font-bold text-xs border border-amber-400/20">
+                      {b.confidence}%
+                    </span>
+                    <span className="text-[9px] text-cyan-400 font-mono">640×640</span>
                   </div>
                 </div>
               ))}

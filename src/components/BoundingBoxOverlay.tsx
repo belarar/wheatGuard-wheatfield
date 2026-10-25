@@ -122,6 +122,9 @@ export const BoundingBoxOverlay: React.FC<BoundingBoxOverlayProps> = ({
                 <span className="px-1.5 py-0.5 rounded bg-black/75 text-emerald-300 font-mono font-bold text-[10px]">
                   {b.confidence}%
                 </span>
+                <span className="px-1 py-0.5 rounded bg-slate-900/90 text-cyan-300 font-mono text-[9px] border border-cyan-500/30 hidden sm:inline" title="إحداثيات المربع على شبكة تدريب 640×640 بكسل">
+                  640p: [{Math.round((xmin / 1000) * 640)},{Math.round((ymin / 1000) * 640)},{Math.round((xmax / 1000) * 640)},{Math.round((ymax / 1000) * 640)}]
+                </span>
               </div>
             )}
           </div>

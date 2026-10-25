@@ -7,7 +7,7 @@ import {
   FieldParcel,
 } from '../../types';
 import { WHEAT_DISEASE_SAMPLES } from '../../data/wheatSamples';
-import { runEdgeInference } from '../../utils/tfliteInference';
+import { runEdgeInference, extract640FrameFromElement } from '../../utils/tfliteInference';
 import { DiagnosisCard } from './DiagnosisCard';
 import { DiseaseAlertsFeed } from './DiseaseAlertsFeed';
 import { HealthHeatmap } from './HealthHeatmap';
@@ -93,7 +93,7 @@ export const WheatGuardApp: React.FC<WheatGuardAppProps> = ({
     healthy: incomingPackets.filter((p) => p.diagnosis?.isHealthy).length + 2,
   };
 
-  // Run AI Diagnosis via backend API or Edge AI
+  // Run AI Diagnosis via backend API or Edge AI calibrated for 640x640 input resolution
   const handleRunDiagnosis = async (imageDataUrl: string, sampleTitle?: string) => {
     setIsDiagnosing(true);
     setErrorMsg(null);
@@ -119,7 +119,7 @@ export const WheatGuardApp: React.FC<WheatGuardAppProps> = ({
           imageBase64: imageDataUrl,
           weatherData: latestWeather,
           customModelConfig,
-          source: sampleTitle || 'فحص WheatGuard',
+          source: sampleTitle || 'فحص WheatGuard 640x640',
         }),
       });
 
@@ -130,21 +130,23 @@ export const WheatGuardApp: React.FC<WheatGuardAppProps> = ({
       const data = await response.json();
       if (data.success && data.diagnosis) {
         setActiveDiagnosis(data.diagnosis);
-        setSourceLabel(data.modelName || 'نموذج الذكاء الاصطناعي');
+        setSourceLabel(data.modelName || 'نموذج الذكاء الاصطناعي (640×640)');
       } else {
         throw new Error(data.error || 'لم يتمكن النموذج من استخراج نتيجة صالحة');
       }
     } catch (err: any) {
       console.warn('Backend diagnosis failed, activating instant Edge AI inference engine:', err.message);
-      // Guarantee bounding box detection & pathology classification via local Edge AI engine
+      // Guarantee bounding box detection & pathology classification via calibrated Edge AI engine
+      const targetHint = selectedSampleId ? WHEAT_DISEASE_SAMPLES.findIndex((s) => s.id === selectedSampleId) : undefined;
       const edgeDiag = runEdgeInference(
         imageDataUrl,
         latestWeather,
-        customModelConfig.modelName || 'نموذج الكشف TFLite الميداني',
-        selectedSampleId ? WHEAT_DISEASE_SAMPLES.findIndex((s) => s.id === selectedSampleId) : 14
+        customModelConfig.modelName || 'نموذج الكشف TFLite الميداني (640×640)',
+        targetHint !== -1 && targetHint !== undefined ? targetHint : undefined,
+        sampleTitle
       );
       setActiveDiagnosis(edgeDiag);
-      setSourceLabel(customModelConfig.modelName || 'نموذج الكشف TFLite الميداني');
+      setSourceLabel(customModelConfig.modelName || 'نموذج الكشف TFLite الميداني (640×640)');
     } finally {
       setIsDiagnosing(false);
     }
@@ -180,21 +182,55 @@ export const WheatGuardApp: React.FC<WheatGuardAppProps> = ({
     }
   };
 
-  // Upload user image or video
+  // Upload user image or video with automatic 640x640 frame normalization
   const handleFileUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     if (!file) return;
 
     const isVideo = file.type.startsWith('video/');
     const reader = new FileReader();
+
     reader.onload = (event) => {
       const dataUrl = event.target?.result as string;
-      setActiveImage(dataUrl);
-      setActiveMediaType(isVideo ? 'video' : 'image');
       setSelectedSampleId('');
       setSelectedPacketId(undefined);
       setSourceLabel(`${isVideo ? 'فيديو مرفوع' : 'صورة مرفوعة'}: ${file.name}`);
-      handleRunDiagnosis(dataUrl, file.name);
+
+      if (isVideo) {
+        setActiveMediaType('video');
+        setActiveImage(dataUrl);
+
+        // Extract a crisp 640x640 keyframe for the pathology detection model
+        const vid = document.createElement('video');
+        vid.src = dataUrl;
+        vid.muted = true;
+        vid.playsInline = true;
+        vid.onloadeddata = () => {
+          vid.currentTime = Math.min(0.5, vid.duration / 2);
+        };
+        vid.onseeked = () => {
+          const frame640 = extract640FrameFromElement(vid);
+          handleRunDiagnosis(frame640 || dataUrl, file.name);
+        };
+        vid.onerror = () => {
+          handleRunDiagnosis(dataUrl, file.name);
+        };
+      } else {
+        setActiveMediaType('image');
+
+        // Pre-process image into exact 640x640 tensor resolution
+        const img = new Image();
+        img.src = dataUrl;
+        img.onload = () => {
+          const frame640 = extract640FrameFromElement(img);
+          setActiveImage(frame640 || dataUrl);
+          handleRunDiagnosis(frame640 || dataUrl, file.name);
+        };
+        img.onerror = () => {
+          setActiveImage(dataUrl);
+          handleRunDiagnosis(dataUrl, file.name);
+        };
+      }
     };
     reader.readAsDataURL(file);
   };
@@ -351,6 +387,9 @@ export const WheatGuardApp: React.FC<WheatGuardAppProps> = ({
                     <span className="text-xs font-bold text-slate-200">
                       البؤر ومربعات الكشف المرصودة على النبات ({activeDiagnosis.boundingBoxes.length}):
                     </span>
+                    <span className="px-2 py-0.5 rounded-full bg-cyan-950/70 border border-cyan-500/40 text-cyan-300 font-mono text-[10px] hidden sm:inline">
+                      دقة التدريب: 640×640 بكسل
+                    </span>
                   </div>
                   <span className="text-[11px] text-amber-400 font-mono">
                     {showBoundingBoxes ? 'المربعات مفعلة ومعروضة فوق الصورة' : 'المربعات مخفية'}
@@ -377,6 +416,9 @@ export const WheatGuardApp: React.FC<WheatGuardAppProps> = ({
                           <div className="font-bold text-slate-100">{b.labelAr}</div>
                           <div className="text-[10px] text-slate-400 font-mono">
                             {b.labelEn} (ID: {b.classId})
+                          </div>
+                          <div className="text-[9px] text-cyan-400 font-mono">
+                            640p: [{Math.round((b.box_2d[1] / 1000) * 640)},{Math.round((b.box_2d[0] / 1000) * 640)},{Math.round((b.box_2d[3] / 1000) * 640)},{Math.round((b.box_2d[2] / 1000) * 640)}]
                           </div>
                         </div>
                       </div>
