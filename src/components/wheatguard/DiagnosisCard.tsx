@@ -40,7 +40,7 @@ export const DiagnosisCard: React.FC<DiagnosisCardProps> = ({
   diagnosis,
   weather,
   imageThumbnail,
-  sourceLabel = 'تم الفحص بنموذج الذكاء الاصطناعي',
+  sourceLabel = 'نموذج القمح المدرب TFLite (640×640)',
   onRetest,
   onOverrideClass,
 }) => {

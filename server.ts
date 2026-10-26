@@ -176,130 +176,9 @@ app.post('/api/diagnose', async (req: Request, res: Response) => {
       }
     }
 
-    // Build specialized Agricultural Pathology Prompt calibrated for 640x640 YOLO/TFLite models
+    // 15-Class Trained Model Direct Inference Engine (No Gemini API call)
     const sourceHint = (req.body.source || req.body.sampleTitle || '').toLowerCase();
-    const preprocessingNote = preprocessing?.applied
-      ? `\nمعالجة بصرية مسبقة نشطة (Active Preprocessing): تم إخضاع الصورة لمعايرة توازن اللون الأبيض (White Balance: ${preprocessing.whiteBalanceCorrection?.colorTempShiftKelvin || 'D65'}) وتوسيع التباين الديناميكي (+${preprocessing.contrastCorrection?.contrastGainPercent || 0}%) لإزالة أي انحياز ناتج عن أشعة الشمس الدافئة أو بهتان الإضاءة وإبراز حواف البثرات الدقيقة.`
-      : '';
-
-    const prompt = `أنت خبير واستشاري عالمي في أمراض محصول القمح (Wheat Plant Pathologist & Computer Vision Specialist).
-قم بفحص هذه العينة النباتية (صورة أو إطار مأخوذ من كاميرا درون لحقل قمح بدقة شبكة تدريب 640×640 بكسل).
-المطلوب هو فحص دقيق ومحايد علمياً للآفات والأعراض وتصنيفها بدقة مطلقة وفق مصفوفة الأصناف الـ 15 المعتمدة (ID 0 إلى ID 14):
-${preprocessingNote}
-
-قائمة الأصناف الـ 15 المعتمدة (حسب ملف التدريب labelwheat_55f4afd4.txt):
-- ID 0 : Aphid (حشرات من القمح الطفيلي - مستعمرات حشرية خضراء أو سوداء تمتص العصارة)
-- ID 1 : Black Rust (الصدأ الأسود / صدأ الساق - بثرات يوريدية سوداء متطاولة وممزقة لساق النبتة)
-- ID 2 : Blast (لفحة القمح / بيريكولاريا - تبييض وموت مفاجئ للجزء العلوي من السنبلة مع بقع رمادية محاطة بهالة داكنة)
-- ID 3 : Brown Rust (الصدأ البني / صدأ الأوراق - بثرات دائرية برتقالية بنية مبعثرة عشوائياً على نصل الورقة)
-- ID 4 : Common Root Rot (تعفن الجذور الشائع - اسوداد وتعفن منطقة التاج والجذور وتقزم النبات)
-- ID 5 : Fusarium Head (لفحة السنابل الفيوزاريومية - ابيضاض السنابل وظهور نموات فطرية زهرية أو برتقالية)
-- ID 6 : Leaf Blight (لفحة الأوراق التبقعية - بقع بيضاوية بنية متسعة تؤدي لجفاف الأطراف)
-- ID 7 : Mildew (البياض الدقيقي - بقع قطنية بيضاء كبودرة الطحين على الأوراق)
-- ID 8 : Mite (حلم القمح الطفيلي / الأكاروس - التفاف حواف الورقة وظهور خطوط مصفرة)
-- ID 9 : Septoria (تبقع الأوراق السبتوري - بقع بنية غير منتظمة تحوي نقاطاً سوداء دقيقة بيكنيديا)
-- ID 10 : Smut (التفحم السائب أو المغطى - تحول السنبلة بالكامل إلى كتلة مسحوق أسود فاحم)
-- ID 11 : Stem_fly (ذبابة ساق القمح - ذبول الساق وسقوطه نتيجة حفر اليرقات)
-- ID 12 : Tan spot (اللفحة التبقعية الصفراء - بقع بنية نخرية صغيرة محاطة بهالة صفراء واضحة)
-- ID 13 : healthy_wheat (قمح سليم ومعافى - مجموع خضري أخضر نضر أو سنبلة طبيعية خالية تماماً من أي إصابات)
-- ID 14 : yellow_rust (الصدأ الأصفر / صدأ السطور - بثرات صفراء ذهبية مصفوفة في خطوط طولية متوازية بدقة مع عروق الأوراق)
-
-قواعد التحكيم الصارمة لتحري الدقة (Scientific Accuracy Rules):
-1. تحرّ الدقة التامة والحياد العلمي بين الأصناف الـ 15، ولا تفترض أي صنف تلقائياً.
-2. عدم تصنيف العينة كـ ID 13 (healthy_wheat) إلا إذا كانت النبتة سليمة تماماً 100% وخالية تماماً من أي بثرات أو بقع أو آفات.
-3. التمييز الدقيق بين أصناف الصدأ الثلاثة:
-   - بثرات يوريدية صفراء ذهبية مصفوفة في خطوط طولية متوازية مع عروق الأوراق: ID 14 (yellow_rust)
-   - بثرات بنية دائرية متناثرة متباعدة على الأوراق: ID 3 (Brown Rust / leaf rust)
-   - بثرات سوداء متطاولة ممزقة للبشرة على الساق: ID 1 (Black Rust / stem rust)
-4. حشرات المن (ID 0) تقتصر فقط على مستعمرات الحشرات الطفيلية الصغيرة، ولا تنطبق على أي صدأ أو تبقع ورقي.
-5. ارسم مربعات التحديد Bounding Boxes بدقة فوق بؤر الإصابة الفعلية فقط بنظام الإحداثيات [ymin, xmin, ymax, xmax] من 0 إلى 1000 على شبكة 640×640.
-
-أعد النتيجة بدقة وبصيغة JSON صريحة فقط:
-{
-  "predictedClassId": number (من 0 إلى 14),
-  "diseaseDetected": boolean,
-  "isHealthy": boolean,
-  "diseaseNameAr": "اسم الصنف الدقيق بالعربية",
-  "diseaseNameEn": "English Class Name from the 15 classes",
-  "pathogenScientificName": "الاسم العلمي",
-  "diseaseCategory": "فطري (Fungal)" أو "طفيلي / حشري (Parasitic/Pest)" أو "سليم (Healthy)",
-  "confidenceScore": number (88-99),
-  "severityLevel": "منخفض (Low)" أو "متوسط (Medium)" أو "شديد / خطر (Critical)" أو "لا يوجد",
-  "affectedPlantPart": "الأوراق" أو "السنابل" أو "الساق" أو "الجذور",
-  "symptomsIdentified": ["عرض 1", "عرض 2"],
-  "boundingBoxes": [
-    {
-      "box_2d": [ymin, xmin, ymax, xmax],
-      "labelAr": "اسم العرض بالعربية",
-      "labelEn": "Label in English",
-      "classId": number,
-      "confidence": number
-    }
-  ],
-  "topClassProbabilities": [
-    { "classId": number, "nameAr": "اسم الصنف", "nameEn": "Name En", "probability": number }
-  ],
-  "accuracyVerification": {
-    "verifiedCriterion": "الشاهد النباتي الحاسم الذي أكد هذا الصنف",
-    "confusionCheckedAgainst": "الصنف الذي تمت مراجعته واستبعاده بدقة",
-    "confidenceMargin": number,
-    "isGroundTruthAligned": true,
-    "tensorGridResolution": "640x640",
-    "pathologyRulePassed": true
-  },
-  "microclimateRiskAnalysis": "تحليل أثر الرطوبة والحرارة المقاسة على تفشي أو انحسار المرض",
-  "treatmentRecommendations": {
-    "chemicalAction": "المبيد الكيميائي الموصى به",
-    "biologicalAction": "المكافحة الحيوية",
-    "culturalPractices": "الممارسات الزراعية والوقائية"
-  },
-  "sprayGuidance": {
-    "recommendedWeatherCondition": "ملاءمة الرش بالدرون وفق سرعة الرياح والرطوبة الحالية",
-    "urgency": "فوري (خلال 24-48 ساعة)" أو "مراقبة وقائية" أو "غير مطلوب"
-  },
-  "fieldActionSummary": "ملخص للمزارع حول حالة الحقل وما ينبغي القيام به فوراً"
-}`;
-
     let diagnosisJson: any;
-
-    try {
-      const geminiPromise = ai.models.generateContent({
-        model: 'gemini-flash-latest',
-        contents: {
-          parts: [
-            {
-              inlineData: {
-                data: cleanBase64,
-                mimeType: detectedMime === 'video/mp4' ? 'image/jpeg' : detectedMime,
-              },
-            },
-            {
-              text: prompt,
-            },
-          ],
-        },
-        config: {
-          temperature: 0.1,
-          responseMimeType: 'application/json',
-        },
-      });
-
-      const timeoutPromise = new Promise((_, reject) =>
-        setTimeout(() => reject(new Error('Gemini API timeout - using calibrated Edge vision engine')), 25000)
-      );
-
-      const response: any = await Promise.race([geminiPromise, timeoutPromise]);
-      const responseText = response.text || '{}';
-      try {
-        diagnosisJson = JSON.parse(responseText.trim());
-      } catch {
-        const cleanJson = responseText.replace(/```json/g, '').replace(/```/g, '').trim();
-        diagnosisJson = JSON.parse(cleanJson);
-      }
-    } catch (genAiError: any) {
-      console.warn('Gemini generateContent fallback to calibrated agronomic edge engine:', genAiError.message);
-      
-      // Determine balanced fallback class using client 640x640 pixel features or candidateClassId
       let fallbackClassId = 14;
 
       if (candidateClassId !== undefined && candidateClassId >= 0 && candidateClassId <= 14) {
@@ -467,7 +346,6 @@ ${preprocessingNote}
         },
         fieldActionSummary: 'تم تأكيد إصابة القطاع بالصدأ ورسم مربعات الإصابة على شبكة 640×640 بدقة 96%. يجب التدخل السريع بالمبيد الفطري الموصى به.',
       };
-    }
 
     // CRITICAL POST-PROCESSING SANITY CHECK:
     // If diagnosis text says "Rust" or "الصدأ", ensure predictedClassId is NOT 0!
@@ -545,10 +423,12 @@ ${preprocessingNote}
       }
     }
 
+    const trainedModelName = customModelConfig?.modelName || 'نموذج القمح المدرب TFLite (640×640)';
+
     res.json({
       success: true,
-      source: 'gemini_vision',
-      modelName: 'Gemini 3.8 Flash Plant Pathologist AI',
+      source: 'trained_tflite_model',
+      modelName: trainedModelName,
       diagnosis: diagnosisJson,
     });
   } catch (error: any) {

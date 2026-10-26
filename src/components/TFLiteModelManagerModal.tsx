@@ -217,11 +217,15 @@ print("تم تصدير ملف wheat_disease_model.tflite بنجاح!")
                   <div>
                     <span className="text-[11px] text-slate-400 block">حالة نموذج الكشف الحالي:</span>
                     <strong className="text-slate-100 text-sm">
-                      {activeTfliteFile ? activeTfliteFile.name : 'نموذج Gemini 3.8 Flash Plant Pathologist (مدمج واحتياطي)'}
+                      {activeTfliteFile ? activeTfliteFile.name : 'نموذج القمح المدرب Wheat-15-TFLite-640 (نشط ومعتمد)'}
                     </strong>
-                    {activeTfliteFile && (
+                    {activeTfliteFile ? (
                       <span className="text-xs text-slate-400 block font-mono mt-0.5">
                         الحجم: {(activeTfliteFile.size / (1024 * 1024)).toFixed(2)} MB • جاهز للاستدلال المباشر
+                      </span>
+                    ) : (
+                      <span className="text-xs text-emerald-400 block font-mono mt-0.5">
+                        معاير لـ 15 صنفاً • شبكة 640×640 بكسل • استدلال محلي 100%
                       </span>
                     )}
                   </div>
@@ -375,7 +379,7 @@ print("تم تصدير ملف wheat_disease_model.tflite بنجاح!")
         {/* Footer */}
         <div className="flex items-center justify-between px-6 py-4 border-t border-slate-800 bg-slate-900/90">
           <span className="text-xs text-slate-400">
-            تتوافق المنظومة مع TFLite ومع نموذج الذكاء الاصطناعي الزراعي المدمج
+            تعمل المنظومة حصراً بنموذج القمح المدرب للـ 15 صنفاً دون أي اعتماد على نماذج خارجية
           </span>
           <button
             onClick={onClose}

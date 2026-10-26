@@ -166,7 +166,7 @@ export const WheatFieldApp: React.FC<WheatFieldAppProps> = ({
       diagnosis = runEdgeInference(
         mediaToTransmit.dataUrl,
         weather,
-        'WheatField-TFLite-Edge-640',
+        'نموذج القمح المدرب TFLite (640×640)',
         targetHint,
         finalLabel
       );

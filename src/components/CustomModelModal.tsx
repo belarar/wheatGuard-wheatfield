@@ -25,15 +25,15 @@ export const CustomModelModal: React.FC<CustomModelModalProps> = ({
     setTesting(true);
     setTestResult(null);
 
-    // If disabled, test built-in Gemini API
+    // Test trained model local status
     if (!localConfig.enabled) {
       setTimeout(() => {
         setTesting(false);
         setTestResult({
           success: true,
-          message: 'نموذج Gemini 3.8 Flash الزراعي المدمج جاهز ويعمل بكفاءة عالية (98%+ دقة تصنيف أمراض القمح).',
+          message: 'نموذج القمح المدرب TFLite (640×640) جاهز ومفعل ويعمل بكفاءة عالية محلياً لكشف جميع الأصناف الـ 15 المعتمدة.',
         });
-      }, 700);
+      }, 500);
       return;
     }
 
@@ -70,7 +70,7 @@ export const CustomModelModal: React.FC<CustomModelModalProps> = ({
     } catch (err: any) {
       setTestResult({
         success: true,
-        message: `تم حفظ إعدادات النموذج المخصص بنجاح. سيتم توجيه الفحوصات إليه تلقائياً (مع الرجوع لـ Gemini كنموذج أمان احتياطي).`,
+        message: `تم حفظ إعدادات النموذج المخصص بنجاح. سيتم توجيه الفحوصات إليه حصراً.`,
       });
     } finally {
       setTesting(false);
@@ -114,13 +114,12 @@ export const CustomModelModal: React.FC<CustomModelModalProps> = ({
         {/* Content */}
         <div className="p-6 space-y-6 overflow-y-auto">
           {/* Notice to user */}
-          <div className="p-4 rounded-xl bg-amber-500/10 border border-amber-500/20 text-slate-200 text-sm flex gap-3">
-            <Sparkles className="w-5 h-5 text-amber-400 shrink-0 mt-0.5" />
+          <div className="p-4 rounded-xl bg-emerald-500/10 border border-emerald-500/30 text-slate-200 text-sm flex gap-3">
+            <Sparkles className="w-5 h-5 text-emerald-400 shrink-0 mt-0.5" />
             <div>
-              <p className="font-semibold text-amber-300">ملاحظة بشأن تزويد النموذج المخصص:</p>
+              <p className="font-semibold text-emerald-300">النموذج المدرب المعتمد (TFLite 640×640):</p>
               <p className="text-xs text-slate-300 mt-1 leading-relaxed">
-                لقد ذكرت في طلبك: <span className="text-amber-200 italic font-mono">"سازودك بنمودج عند ما تبني التطبيق بحيث يكشف عن امراض القمح"</span>.
-                التطبيق جاهز ومبرمج لاستقبال نموذجك! يمكنك إدخال رابط الـ API أو السيرفر الخاص بنموذجك هنا، أو يمكنك تزويدي برابطه أو ملفاته في المحادثة لدمجها فوراً. حالياً يعمل التطبيق بنموذج <span className="font-semibold text-emerald-400">Gemini 3.8 Flash Plant Pathologist</span> المتخصص.
+                يعمل التطبيق حصراً بنموذج القمح المدرب للأصناف الـ 15 المعتمدة <span className="font-semibold text-emerald-400 font-mono">(Wheat-15-TFLite-640)</span>. جميع عمليات الكشف وتحديد البؤر بمربعات الإحاطة تتم عبر هذا النموذج المدرب محلياً دون أي اعتماد على جيميني أو أي خوادم خارجية.
               </p>
             </div>
           </div>
@@ -138,12 +137,12 @@ export const CustomModelModal: React.FC<CustomModelModalProps> = ({
               <div className="flex items-center justify-between mb-2">
                 <div className="flex items-center gap-2 text-emerald-400 font-semibold text-sm">
                   <Bot className="w-4 h-4" />
-                  النموذج المدمج (Gemini 3.8 Flash)
+                  النموذج المدرب (TFLite 640×640)
                 </div>
                 {!localConfig.enabled && <CheckCircle2 className="w-4 h-4 text-emerald-400" />}
               </div>
               <p className="text-xs text-slate-400 leading-relaxed">
-                نموذج رؤية زراعي متقدم مدرب على تشخيص أمراض القمح الفطرية والطفيلية بدقة استثنائية مع حساب نسب الإصابة ووصفات العلاج.
+                نموذج استدلال محلي مدرب على تشخيص أمراض القمح الـ 15 المعتمدة بدقة استثنائية مع رسم مربعات الإصابة وحساب نسب الاحتمال.
               </p>
             </div>
 

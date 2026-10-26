@@ -144,19 +144,19 @@ export const Header: React.FC<HeaderProps> = ({
             </span>
           </button>
 
-          {/* AI Model selector button */}
+          {/* Trained AI Model selector button */}
           <button
             onClick={onOpenModelModal}
             className={`flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg text-xs font-medium border transition-colors ${
               customModelConfig.enabled
-                ? 'bg-amber-500/15 border-amber-500/40 text-amber-300'
+                ? 'bg-emerald-500/15 border-emerald-500/40 text-emerald-300'
                 : 'bg-slate-900 border-slate-700/80 text-slate-300 hover:border-slate-600'
             }`}
-            title="تحديد أو تغيير نموذج الذكاء الاصطناعي لكشف الأمراض"
+            title="نموذج كشف أمراض القمح المدرب المعتمد (640×640)"
           >
             <Sparkles className="w-3.5 h-3.5 text-emerald-400" />
-            <span className="hidden sm:inline">
-              {customModelConfig.enabled ? customModelConfig.modelName || 'نموذج مخصص' : 'Gemini AI'}
+            <span className="hidden sm:inline font-semibold">
+              {customModelConfig.modelName || (activeTfliteFile ? activeTfliteFile.name : 'النموذج المدرب (15 صنف)')}
             </span>
           </button>
 

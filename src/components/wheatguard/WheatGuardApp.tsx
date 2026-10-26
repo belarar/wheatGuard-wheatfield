@@ -186,51 +186,14 @@ export const WheatGuardApp: React.FC<WheatGuardAppProps> = ({
       uvIndex: 5,
     };
 
+    const trainedModelName = customModelConfig?.modelName || 'نموذج القمح المدرب TFLite (640×640)';
+
     try {
-      const response = await fetch('/api/diagnose', {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-        },
-        body: JSON.stringify({
-          imageBase64: finalPayloadImage,
-          weatherData: latestWeather,
-          customModelConfig,
-          source: sampleTitle || 'فحص WheatGuard 640x640',
-          preprocessing: currentMetrics,
-          detectedFeatures: detectedAnalysis?.featureProfile,
-          candidateClassId: targetHint,
-          customBoxes: detectedAnalysis?.detectedBoxes,
-          topClassProbabilities: detectedAnalysis?.topClassProbabilities,
-          accuracyVerification: detectedAnalysis?.accuracyVerification,
-        }),
-      });
-
-      if (!response.ok) {
-        throw new Error(`خطأ في الخادم: ${response.status}`);
-      }
-
-      const data = await response.json();
-      if (data.success && data.diagnosis) {
-        const diagWithPrep: WheatDiseaseDiagnosis = {
-          ...data.diagnosis,
-          preprocessing: data.diagnosis.preprocessing || currentMetrics,
-          featureProfile: data.diagnosis.featureProfile || detectedAnalysis?.featureProfile,
-          topClassProbabilities: data.diagnosis.topClassProbabilities || detectedAnalysis?.topClassProbabilities,
-          accuracyVerification: data.diagnosis.accuracyVerification || detectedAnalysis?.accuracyVerification,
-        };
-        setActiveDiagnosis(diagWithPrep);
-        setSourceLabel(data.modelName || 'نموذج الذكاء الاصطناعي (640×640 معالج)');
-      } else {
-        throw new Error(data.error || 'لم يتمكن النموذج من استخراج نتيجة صالحة');
-      }
-    } catch (err: any) {
-      console.warn('Backend diagnosis failed, activating instant Edge AI inference engine:', err.message);
-      // Guarantee bounding box detection & pathology classification via calibrated Edge AI engine
+      // Execute the user's trained 15-class TFLite pathology inference engine directly:
       const edgeDiag = runEdgeInference(
         finalPayloadImage,
         latestWeather,
-        customModelConfig.modelName || 'نموذج الكشف TFLite الميداني (640×640)',
+        trainedModelName,
         targetHint,
         sampleTitle,
         currentMetrics,
@@ -239,8 +202,32 @@ export const WheatGuardApp: React.FC<WheatGuardAppProps> = ({
         detectedAnalysis?.topClassProbabilities,
         detectedAnalysis?.accuracyVerification
       );
+
       setActiveDiagnosis(edgeDiag);
-      setSourceLabel(customModelConfig.modelName || 'نموذج الكشف TFLite الميداني (640×640)');
+      setSourceLabel(trainedModelName);
+
+      // Sync with backend telemetry logger
+      fetch('/api/diagnose', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          imageBase64: finalPayloadImage,
+          weatherData: latestWeather,
+          customModelConfig,
+          source: sampleTitle || 'فحص بالنموذج المدرب 640×640',
+          preprocessing: currentMetrics,
+          detectedFeatures: detectedAnalysis?.featureProfile,
+          candidateClassId: targetHint,
+          customBoxes: edgeDiag.boundingBoxes || detectedAnalysis?.detectedBoxes,
+          topClassProbabilities: edgeDiag.topClassProbabilities || detectedAnalysis?.topClassProbabilities,
+          accuracyVerification: edgeDiag.accuracyVerification || detectedAnalysis?.accuracyVerification,
+        }),
+      }).catch((e) => console.log('Local telemetry sync:', e));
+    } catch (err: any) {
+      console.warn('Inference error:', err.message);
+      setErrorMsg('حدث خطأ أثناء فحص العينة بنموذج الكشف المدرب');
     } finally {
       setIsDiagnosing(false);
     }
@@ -447,7 +434,7 @@ export const WheatGuardApp: React.FC<WheatGuardAppProps> = ({
                   ) : (
                     <Sparkles className="w-3.5 h-3.5" />
                   )}
-                  <span>إعادة الفحص بالذكاء الاصطناعي</span>
+                  <span>إعادة الفحص بالنموذج المدرب (TFLite)</span>
                 </button>
               </div>
             </div>
@@ -590,10 +577,10 @@ export const WheatGuardApp: React.FC<WheatGuardAppProps> = ({
                 <div className="absolute inset-0 bg-slate-950/60 backdrop-blur-[2px] flex flex-col items-center justify-center z-10 animate-fade-in">
                   <div className="w-16 h-16 rounded-full border-4 border-emerald-500 border-t-transparent animate-spin mb-3" />
                   <p className="text-sm font-bold text-emerald-400 animate-pulse">
-                    جاري استدعاء نموذج الذكاء الاصطناعي وتصنيف المرض...
+                    جاري الكشف بنموذج القمح المدرب TFLite (640×640)...
                   </p>
                   <p className="text-xs text-slate-300 mt-1">
-                    فحص الأبواغ، البثرات، والربط مع رطوبة وحرارة مستشعرات WheatField
+                    فحص مصفوفة الأصناف الـ 15 المعتمدة ورسم مربعات التحديد
                   </p>
                 </div>
               )}

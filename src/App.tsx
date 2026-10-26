@@ -21,12 +21,12 @@ export default function App() {
   const [appMode, setAppMode] = useState<AppMode>('WHEAT_GUARD');
   const [deviceView, setDeviceView] = useState<DeviceView>('DESKTOP');
 
-  // Custom AI Model settings
+  // User's Trained AI Model settings (15 classes, 640x640)
   const [customModelConfig, setCustomModelConfig] = useState<CustomModelConfig>({
-    enabled: false,
-    modelName: 'Gemini 3.8 Flash Plant Pathologist',
+    enabled: true,
+    modelName: 'نموذج القمح المدرب TFLite (640×640)',
     endpointUrl: '',
-    framework: 'REST API',
+    framework: 'Custom',
   });
 
   const [activeTfliteFile, setActiveTfliteFile] = useState<{
