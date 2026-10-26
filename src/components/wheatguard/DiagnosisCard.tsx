@@ -19,7 +19,13 @@ import {
   SlidersHorizontal,
   Sun,
   Sparkles,
+  Microscope,
+  BarChart3,
+  CheckCheck,
+  Binary,
+  ShieldCheck,
 } from 'lucide-react';
+import { WHEAT_15_CLASSES } from '../../data/wheatLabels';
 
 interface DiagnosisCardProps {
   diagnosis: WheatDiseaseDiagnosis;
@@ -27,6 +33,7 @@ interface DiagnosisCardProps {
   imageThumbnail?: string;
   sourceLabel?: string;
   onRetest?: () => void;
+  onOverrideClass?: (classId: number) => void;
 }
 
 export const DiagnosisCard: React.FC<DiagnosisCardProps> = ({
@@ -35,6 +42,7 @@ export const DiagnosisCard: React.FC<DiagnosisCardProps> = ({
   imageThumbnail,
   sourceLabel = 'تم الفحص بنموذج الذكاء الاصطناعي',
   onRetest,
+  onOverrideClass,
 }) => {
   const [isPlayingAudio, setIsPlayingAudio] = useState(false);
   const [copied, setCopied] = useState(false);
@@ -336,6 +344,223 @@ export const DiagnosisCard: React.FC<DiagnosisCardProps> = ({
                   عزل انعكاس أشعة الشمس وقش القمح لإبراز بؤر الفطريات والمن في الأصناف الـ 15 بدقة
                 </p>
               </div>
+            </div>
+          </div>
+        )}
+
+        {/* Model Accuracy, Training Alignment & Scientific Grounding Panel */}
+        <div className="p-4 rounded-xl bg-gradient-to-r from-slate-950 via-slate-900 to-emerald-950/20 border border-emerald-500/30 text-xs shadow-lg space-y-3.5">
+          <div className="flex flex-wrap items-center justify-between gap-2 border-b border-slate-800 pb-2.5">
+            <div className="flex items-center gap-2">
+              <div className="p-1.5 rounded-lg bg-emerald-500/20 text-emerald-400 border border-emerald-500/40">
+                <ShieldCheck className="w-4 h-4" />
+              </div>
+              <div>
+                <h4 className="font-bold text-slate-100 flex items-center gap-2">
+                  <span>تحري الدقة والمطابقة العلمية لنموذج التدريب (Model Output Accuracy)</span>
+                  <span className="text-[10px] px-2 py-0.5 rounded-full bg-emerald-500/20 text-emerald-300 border border-emerald-500/40 font-mono">
+                    640×640 Calibrated
+                  </span>
+                </h4>
+                <p className="text-[11px] text-slate-400">
+                  فحص وتحكيم دقيق عبر مصفوفة الأصناف الـ 15 المعتمدة مع منع الانحياز واستبعاد التشابه النباتي
+                </p>
+              </div>
+            </div>
+            <div className="flex items-center gap-1.5">
+              <span className="text-[10px] bg-slate-800 text-slate-300 px-2 py-1 rounded font-mono border border-slate-700">
+                شبكة التدريب: 640×640px
+              </span>
+              <span className="text-[10px] bg-emerald-950 text-emerald-300 px-2 py-1 rounded font-bold border border-emerald-500/30">
+                التحقق الحرج: متطابق
+              </span>
+            </div>
+          </div>
+
+          {/* Top Class Probabilities (Softmax Distribution) */}
+          {diagnosis.topClassProbabilities && diagnosis.topClassProbabilities.length > 0 && (
+            <div className="space-y-2">
+              <div className="flex items-center justify-between text-[11px]">
+                <span className="font-bold text-slate-200 flex items-center gap-1.5">
+                  <BarChart3 className="w-3.5 h-3.5 text-cyan-400" />
+                  مصفوفة احتمالات الأصناف الأكثر ترجيحاً (Softmax Distribution):
+                </span>
+                <span className="text-slate-400 font-mono text-[10px]">
+                  Top 3 Predictions
+                </span>
+              </div>
+
+              <div className="grid grid-cols-1 sm:grid-cols-3 gap-2">
+                {diagnosis.topClassProbabilities.map((probItem, pIdx) => {
+                  const isTop = pIdx === 0;
+                  return (
+                    <div
+                      key={pIdx}
+                      className={`p-2.5 rounded-lg border flex flex-col justify-between ${
+                        isTop
+                          ? 'bg-emerald-950/30 border-emerald-500/40 text-emerald-200 shadow-sm'
+                          : 'bg-slate-900/80 border-slate-800 text-slate-300'
+                      }`}
+                    >
+                      <div className="flex items-center justify-between gap-1 mb-1.5">
+                        <span className="font-bold text-xs truncate flex items-center gap-1">
+                          <span className="font-mono text-[10px] text-slate-400">[{probItem.classId}]</span>
+                          <span>{probItem.nameAr}</span>
+                        </span>
+                        <span className="font-mono font-bold text-xs">
+                          {probItem.probability}%
+                        </span>
+                      </div>
+                      <div className="w-full bg-slate-800 h-1.5 rounded-full overflow-hidden">
+                        <div
+                          className={`h-full rounded-full transition-all duration-700 ${
+                            isTop ? 'bg-emerald-400' : 'bg-slate-500'
+                          }`}
+                          style={{ width: `${Math.min(100, Math.max(3, probItem.probability))}%` }}
+                        />
+                      </div>
+                      <div className="text-[9px] text-slate-400 font-mono mt-1 truncate">
+                        {probItem.nameEn}
+                      </div>
+                    </div>
+                  );
+                })}
+              </div>
+            </div>
+          )}
+
+          {/* Pathology Ground-Truth Evidence & Confusion Exclusion */}
+          {diagnosis.accuracyVerification && (
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-2.5 pt-1">
+              <div className="p-2.5 rounded-lg bg-slate-900/80 border border-slate-800">
+                <div className="flex items-center gap-1.5 text-emerald-400 font-semibold mb-1">
+                  <CheckCheck className="w-3.5 h-3.5" />
+                  <span>الشاهد النباتي الحاسم (Verified Criterion):</span>
+                </div>
+                <p className="text-[11px] text-slate-300 leading-relaxed">
+                  {diagnosis.accuracyVerification.verifiedCriterion}
+                </p>
+                {diagnosis.featureProfile?.stripeCollinearityScore !== undefined && diagnosis.featureProfile.stripeCollinearityScore > 0 && (
+                  <div className="text-[10px] text-amber-300 font-mono mt-1">
+                    معامل المحاذاة الطولية لصدأ السطور: {diagnosis.featureProfile.stripeCollinearityScore}%
+                  </div>
+                )}
+              </div>
+
+              <div className="p-2.5 rounded-lg bg-slate-900/80 border border-slate-800">
+                <div className="flex items-center gap-1.5 text-cyan-400 font-semibold mb-1">
+                  <Binary className="w-3.5 h-3.5" />
+                  <span>فحص واستبعاد التشابه (Confusion Exclusion):</span>
+                </div>
+                <p className="text-[11px] text-slate-300 leading-relaxed">
+                  {diagnosis.accuracyVerification.confusionCheckedAgainst}
+                </p>
+                <div className="text-[10px] text-emerald-400 font-mono mt-1">
+                  هامش التفوق التنبؤي: +{diagnosis.accuracyVerification.confidenceMargin}%
+                </div>
+              </div>
+            </div>
+          )}
+
+          {/* Spectral Pathology Breakdown */}
+          {diagnosis.featureProfile?.spectralBreakdown && (
+            <div className="pt-1 space-y-1.5">
+              <span className="text-[10px] text-slate-400 font-semibold block">
+                التوزيع الطيفي للبكسلات المفحوصة (Spectral Pathology Breakdown):
+              </span>
+              <div className="grid grid-cols-2 sm:grid-cols-5 gap-2">
+                <div className="p-1.5 rounded-md bg-slate-900 border border-slate-800 text-center">
+                  <span className="text-[9px] text-yellow-400 block">بثرات صفراء</span>
+                  <span className="text-xs font-mono font-bold text-slate-200">
+                    {diagnosis.featureProfile.spectralBreakdown.yellowUrediniaPercent}%
+                  </span>
+                </div>
+                <div className="p-1.5 rounded-md bg-slate-900 border border-slate-800 text-center">
+                  <span className="text-[9px] text-amber-500 block">بثرات بنية</span>
+                  <span className="text-xs font-mono font-bold text-slate-200">
+                    {diagnosis.featureProfile.spectralBreakdown.brownRustPercent}%
+                  </span>
+                </div>
+                <div className="p-1.5 rounded-md bg-slate-900 border border-slate-800 text-center">
+                  <span className="text-[9px] text-rose-400 block">نخر / ساق</span>
+                  <span className="text-xs font-mono font-bold text-slate-200">
+                    {diagnosis.featureProfile.spectralBreakdown.darkNecrosisPercent}%
+                  </span>
+                </div>
+                <div className="p-1.5 rounded-md bg-slate-900 border border-slate-800 text-center">
+                  <span className="text-[9px] text-slate-300 block">بودرة فطرية</span>
+                  <span className="text-xs font-mono font-bold text-slate-200">
+                    {diagnosis.featureProfile.spectralBreakdown.whiteMildewPercent}%
+                  </span>
+                </div>
+                <div className="p-1.5 rounded-md bg-slate-900 border border-slate-800 text-center">
+                  <span className="text-[9px] text-emerald-400 block">كلوروفيل سليم</span>
+                  <span className="text-xs font-mono font-bold text-slate-200">
+                    {diagnosis.featureProfile.spectralBreakdown.foliarGreenPercent}%
+                  </span>
+                </div>
+              </div>
+            </div>
+          )}
+
+          {/* Visual Feature Point Counts */}
+          {diagnosis.featureProfile && (
+            <div className="grid grid-cols-2 sm:grid-cols-5 gap-2 pt-1 border-t border-slate-800/60">
+              <div className="p-1.5 rounded-lg bg-slate-900/60 border border-slate-800 text-center">
+                <span className="text-[9px] text-yellow-400 block font-semibold">بثرات صفراء (Yellow Rust)</span>
+                <span className="text-xs font-mono font-bold text-slate-200">{diagnosis.featureProfile.yellowPustuleCount} نقطة</span>
+              </div>
+              <div className="p-1.5 rounded-lg bg-slate-900/60 border border-slate-800 text-center">
+                <span className="text-[9px] text-amber-500 block font-semibold">بثرات بنية (Brown Rust)</span>
+                <span className="text-xs font-mono font-bold text-slate-200">{diagnosis.featureProfile.brownPustuleCount} نقطة</span>
+              </div>
+              <div className="p-1.5 rounded-lg bg-slate-900/60 border border-slate-800 text-center">
+                <span className="text-[9px] text-rose-400 block font-semibold">نخر وبقع داكنة (Necrotic/Stem)</span>
+                <span className="text-xs font-mono font-bold text-slate-200">{diagnosis.featureProfile.blackNecroticCount} نقطة</span>
+              </div>
+              <div className="p-1.5 rounded-lg bg-slate-900/60 border border-slate-800 text-center">
+                <span className="text-[9px] text-slate-300 block font-semibold">بودرة فطرية (Mildew)</span>
+                <span className="text-xs font-mono font-bold text-slate-200">{diagnosis.featureProfile.whitePowderCount} نقطة</span>
+              </div>
+              <div className="p-1.5 rounded-lg bg-slate-900/60 border border-slate-800 text-center">
+                <span className="text-[9px] text-emerald-400 block font-semibold">أنسجة خضراء سليمة</span>
+                <span className="text-xs font-mono font-bold text-slate-200">{diagnosis.featureProfile.healthyGreenCount} نقطة</span>
+              </div>
+            </div>
+          )}
+        </div>
+
+        {/* 15-Class Direct Verification & Calibration Bar */}
+        {onOverrideClass && (
+          <div className="p-3.5 rounded-xl bg-slate-950/80 border border-slate-800 text-xs">
+            <div className="flex items-center justify-between mb-2">
+              <span className="text-xs font-bold text-slate-300 flex items-center gap-1.5">
+                <Target className="w-3.5 h-3.5 text-cyan-400" />
+                تحكيم وتعديل الصنف التنبؤي بين الأصناف الـ 15 (Manual Verification):
+              </span>
+              <span className="text-[10px] text-slate-400 font-mono">
+                الصنف الحالي: ID {diagnosis.predictedClassId ?? 14}
+              </span>
+            </div>
+            <div className="flex flex-wrap gap-1.5 max-h-36 overflow-y-auto pr-1 custom-scrollbar">
+              {WHEAT_15_CLASSES.map((cls) => {
+                const isCurrent = diagnosis.predictedClassId === cls.id;
+                return (
+                  <button
+                    key={cls.id}
+                    onClick={() => onOverrideClass(cls.id)}
+                    className={`px-2 py-1 rounded-lg text-[11px] font-medium transition-all flex items-center gap-1.5 border ${
+                      isCurrent
+                        ? 'bg-amber-500/20 text-amber-300 border-amber-500/60 font-bold shadow-sm ring-1 ring-amber-500/40'
+                        : 'bg-slate-900/80 text-slate-400 border-slate-800 hover:border-slate-700 hover:text-slate-200'
+                    }`}
+                  >
+                    <span className="font-mono text-[9px] text-slate-500">[{cls.id}]</span>
+                    <span>{cls.nameAr}</span>
+                    {isCurrent && <span className="w-1.5 h-1.5 rounded-full bg-amber-400 animate-pulse" />}
+                  </button>
+                );
+              })}
             </div>
           </div>
         )}

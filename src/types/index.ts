@@ -66,6 +66,41 @@ export interface PreprocessingMetrics {
   preprocessedDataUrl?: string;
 }
 
+export interface VisualFeatureProfile {
+  yellowPustuleCount: number;
+  brownPustuleCount: number;
+  blackNecroticCount: number;
+  whitePowderCount: number;
+  healthyGreenCount: number;
+  detectedCandidateClassId: number;
+  reasoning: string;
+  spectralBreakdown?: {
+    yellowUrediniaPercent: number;
+    brownRustPercent: number;
+    darkNecrosisPercent: number;
+    whiteMildewPercent: number;
+    foliarGreenPercent: number;
+    backgroundPercent: number;
+  };
+  stripeCollinearityScore?: number; // 0-100 linear alignment score for Yellow Rust
+}
+
+export interface ClassProbabilityItem {
+  classId: number;
+  nameAr: string;
+  nameEn: string;
+  probability: number; // 0 to 100
+}
+
+export interface AccuracyVerificationDetails {
+  verifiedCriterion: string;
+  confusionCheckedAgainst: string;
+  confidenceMargin: number;
+  isGroundTruthAligned: boolean;
+  tensorGridResolution: string; // "640x640"
+  pathologyRulePassed: boolean;
+}
+
 export interface WheatDiseaseDiagnosis {
   predictedClassId?: number;
   diseaseDetected: boolean;
@@ -91,6 +126,9 @@ export interface WheatDiseaseDiagnosis {
   };
   fieldActionSummary: string;
   preprocessing?: PreprocessingMetrics;
+  featureProfile?: VisualFeatureProfile;
+  topClassProbabilities?: ClassProbabilityItem[];
+  accuracyVerification?: AccuracyVerificationDetails;
 }
 
 export interface CapturedSample {
