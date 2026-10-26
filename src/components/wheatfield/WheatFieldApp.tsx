@@ -8,6 +8,7 @@ import {
 } from '../../types';
 import { WHEAT_DISEASE_SAMPLES } from '../../data/wheatSamples';
 import { runEdgeInference } from '../../utils/tfliteInference';
+import { formatLatinDateTime, formatLatinTime, formatTransmissionStamp } from '../../utils/dateFormatter';
 import { DroneFPVCockpit } from './DroneFPVCockpit';
 import { InteractiveFieldMap } from './InteractiveFieldMap';
 import { SensorControlDeck } from './SensorControlDeck';
@@ -135,11 +136,24 @@ export const WheatFieldApp: React.FC<WheatFieldAppProps> = ({
   const handleTransmit = (overrideMedia?: { dataUrl: string; type: 'image' | 'video'; label?: string }) => {
     setIsTransmitting(true);
 
+    const now = Date.now();
+    const latinDateTime = formatLatinDateTime(now);
+    const latinTime = formatLatinTime(now);
+
+    const defaultLabel = overrideMedia?.type === 'video' || activeCustomMedia?.type === 'video'
+      ? `مقطع مسح جوي [${latinDateTime}]: ${activeSample.title}`
+      : `لقطة درون [${latinDateTime}]: ${activeSample.title}`;
+
     const mediaToTransmit = overrideMedia || activeCustomMedia || {
       dataUrl: activeSample.imageUrl,
       type: 'image' as const,
-      label: `لقطة درون: ${activeSample.title}`,
+      label: defaultLabel,
     };
+
+    // Ensure the label explicitly carries the Latin date and time if it doesn't already have one
+    const finalLabel = mediaToTransmit.label?.includes(latinTime)
+      ? mediaToTransmit.label
+      : `${mediaToTransmit.label || 'مقطع مسح جوي'} [${latinDateTime}]`;
 
     // For preset samples, use activeSampleIndex.
     // For custom uploaded media (images or videos), do NOT pass activeSampleIndex (which was 0)!
@@ -154,13 +168,14 @@ export const WheatFieldApp: React.FC<WheatFieldAppProps> = ({
         weather,
         'WheatField-TFLite-Edge-640',
         targetHint,
-        mediaToTransmit.label
+        finalLabel
       );
     }
 
     const packet: TelemetryPacket = {
-      id: `pkt-${Date.now()}-${Math.random().toString(36).substr(2, 5)}`,
-      timestamp: Date.now(),
+      id: `pkt-${now}-${Math.random().toString(36).substr(2, 5)}`,
+      timestamp: now,
+      formattedTimestampLatin: latinDateTime,
       droneId: droneState.droneId,
       coordinates: { ...droneState.coordinates },
       altitudeMeters: droneState.altitudeMeters,
@@ -169,7 +184,7 @@ export const WheatFieldApp: React.FC<WheatFieldAppProps> = ({
       capturedMedia: {
         type: mediaToTransmit.type,
         dataUrl: mediaToTransmit.dataUrl,
-        label: mediaToTransmit.label,
+        label: finalLabel,
       },
       diagnosis,
     };
@@ -186,7 +201,7 @@ export const WheatFieldApp: React.FC<WheatFieldAppProps> = ({
 
     setTimeout(() => {
       setIsTransmitting(false);
-      setLastSentTime(new Date().toLocaleTimeString('ar-SA'));
+      setLastSentTime(latinDateTime);
     }, 600);
   };
 

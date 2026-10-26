@@ -26,6 +26,7 @@ import {
 } from 'lucide-react';
 import { BoundingBoxOverlay } from '../BoundingBoxOverlay';
 import { generateDetectionBoxes, extract640FrameFromElement } from '../../utils/tfliteInference';
+import { formatLatinDateTime, formatLatinTime } from '../../utils/dateFormatter';
 
 interface DroneFPVCockpitProps {
   droneState: DroneState;
@@ -70,7 +71,17 @@ export const DroneFPVCockpit: React.FC<DroneFPVCockpitProps> = ({
   const customVideoRef = useRef<HTMLVideoElement>(null);
   const mediaStreamRef = useRef<MediaStream | null>(null);
 
-  // Video recording timer
+  // Video recording timer & live Latin OSD clock
+  const [hudTimestamp, setHudTimestamp] = useState<string>(formatLatinDateTime());
+  const [recordedAtLatin, setRecordedAtLatin] = useState<string | null>(null);
+
+  useEffect(() => {
+    const clockInterval = setInterval(() => {
+      setHudTimestamp(formatLatinDateTime());
+    }, 1000);
+    return () => clearInterval(clockInterval);
+  }, []);
+
   useEffect(() => {
     let interval: any;
     if (isRecording) {
@@ -194,6 +205,8 @@ export const DroneFPVCockpit: React.FC<DroneFPVCockpitProps> = ({
     } else {
       setIsRecording(false);
       const frameUrl = getActiveFrameDataUrl();
+      const latinNow = formatLatinDateTime();
+      setRecordedAtLatin(latinNow);
       setRecordedVideoClip(frameUrl);
       onRecordVideo(frameUrl);
     }
@@ -414,6 +427,13 @@ export const DroneFPVCockpit: React.FC<DroneFPVCockpitProps> = ({
             <div className="absolute h-8 w-[1px] bg-emerald-400/80 -top-6" />
             <div className="absolute h-8 w-[1px] bg-emerald-400/80 -bottom-6" />
           </div>
+          {/* Top/Bottom HUD OSD Time Tag in Latin Digits */}
+          <div className="absolute bottom-2 left-3 z-10 pointer-events-none bg-slate-950/70 border border-slate-800/80 px-2 py-0.5 rounded text-[10px] font-mono text-emerald-400 flex items-center gap-1.5">
+            <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-ping" />
+            <span className="text-slate-400">OSD TIME:</span>
+            <span className="font-bold text-slate-100">{hudTimestamp}</span>
+            <span className="text-[9px] text-amber-400">UTC</span>
+          </div>
         </div>
 
         {/* BOTTOM CONTROL DECK: Camera triggers, Zoom, Gimbal, Push to WheatGuard */}
@@ -516,15 +536,18 @@ export const DroneFPVCockpit: React.FC<DroneFPVCockpitProps> = ({
 
       {/* Recorded Video Clip Preview Bar (when recorded) */}
       {recordedVideoClip && (
-        <div className="p-3 bg-slate-900 border border-emerald-500/40 rounded-xl flex items-center justify-between text-xs animate-fade-in">
-          <div className="flex items-center gap-2">
+        <div className="p-3 bg-slate-900 border border-emerald-500/40 rounded-xl flex flex-wrap items-center justify-between gap-2 text-xs animate-fade-in">
+          <div className="flex flex-wrap items-center gap-2">
             <CheckCircle2 className="w-4 h-4 text-emerald-400" />
             <strong className="text-slate-100">تم تسجيل مقطع جوي بنجاح!</strong>
-            <span className="text-slate-400">جاهز للتحليل بواسطة WheatGuard</span>
+            <span className="font-mono text-emerald-300 font-bold bg-emerald-950/60 px-2 py-0.5 rounded border border-emerald-500/30 text-[11px]">
+              توقيت التسجيل: {recordedAtLatin || hudTimestamp}
+            </span>
+            <span className="text-slate-400 hidden sm:inline">جاهز للإرسال والتحليل في WheatGuard</span>
           </div>
           <button
             onClick={handleSend}
-            className="flex items-center gap-1.5 px-3 py-1 bg-emerald-600 hover:bg-emerald-500 text-white rounded-lg font-bold"
+            className="flex items-center gap-1.5 px-3 py-1.5 bg-emerald-600 hover:bg-emerald-500 text-white rounded-lg font-bold shadow-md shadow-emerald-600/30"
           >
             <Send className="w-3.5 h-3.5" />
             <span>إرسال الفيديو إلى WheatGuard</span>

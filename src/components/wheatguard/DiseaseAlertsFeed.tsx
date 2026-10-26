@@ -1,6 +1,6 @@
-import React from 'react';
 import { TelemetryPacket, CapturedSample } from '../../types';
-import { AlertCircle, CheckCircle2, Clock, MapPin, Plane, Radio, ArrowUpRight } from 'lucide-react';
+import { AlertCircle, CheckCircle2, Clock, MapPin, Plane, Radio, ArrowUpRight, Video } from 'lucide-react';
+import { formatLatinTime, formatLatinDate, formatLatinDateTime } from '../../utils/dateFormatter';
 
 interface DiseaseAlertsFeedProps {
   packets: TelemetryPacket[];
@@ -57,38 +57,51 @@ export const DiseaseAlertsFeed: React.FC<DiseaseAlertsFeedProps> = ({
                 }`}
               >
                 <div className="flex items-start justify-between gap-2 mb-1.5">
-                  <div className="flex items-center gap-1.5">
+                  <div className="flex items-center gap-1.5 min-w-0">
                     {hasDiagnosis ? (
                       isHealthy ? (
-                        <CheckCircle2 className="w-4 h-4 text-emerald-400" />
+                        <CheckCircle2 className="w-4 h-4 text-emerald-400 shrink-0" />
                       ) : (
                         <AlertCircle
-                          className={`w-4 h-4 ${isCritical ? 'text-rose-400 animate-pulse' : 'text-amber-400'}`}
+                          className={`w-4 h-4 shrink-0 ${isCritical ? 'text-rose-400 animate-pulse' : 'text-amber-400'}`}
                         />
                       )
+                    ) : pkt.capturedMedia?.type === 'video' ? (
+                      <Video className="w-4 h-4 text-rose-400 shrink-0" />
                     ) : (
-                      <Plane className="w-4 h-4 text-blue-400" />
+                      <Plane className="w-4 h-4 text-blue-400 shrink-0" />
                     )}
-                    <span className="text-xs font-bold text-slate-200">
+                    <span className="text-xs font-bold text-slate-200 truncate">
                       {pkt.diagnosis ? pkt.diagnosis.diseaseNameAr : pkt.capturedMedia?.label || 'لقطة كاميرا الدرون'}
                     </span>
+                    {pkt.capturedMedia?.type === 'video' && (
+                      <span className="px-1.5 py-0.2 rounded bg-rose-500/20 text-rose-300 font-bold text-[9px] border border-rose-500/30 shrink-0">
+                        فيديو
+                      </span>
+                    )}
                   </div>
 
-                  <span className="text-[10px] text-slate-500 flex items-center gap-1">
-                    <Clock className="w-3 h-3" />
-                    {new Date(pkt.timestamp).toLocaleTimeString('ar-SA', {
-                      hour: '2-digit',
-                      minute: '2-digit',
-                      second: '2-digit',
-                    })}
+                  {/* Strictly Latin date & time display (0-9) */}
+                  <span
+                    className="text-[10px] text-emerald-400 font-mono flex items-center gap-1 bg-slate-900/90 px-1.5 py-0.5 rounded border border-slate-800 shrink-0"
+                    title={`تاريخ ووقت الإرسال (Latin): ${pkt.formattedTimestampLatin || formatLatinDateTime(pkt.timestamp)}`}
+                  >
+                    <Clock className="w-3 h-3 text-emerald-400" />
+                    <span>{formatLatinTime(pkt.timestamp)}</span>
                   </span>
                 </div>
 
                 <div className="flex items-center justify-between text-[11px] text-slate-400 pt-1">
-                  <div className="flex items-center gap-1">
-                    <MapPin className="w-3 h-3 text-slate-500" />
-                    <span>
-                      {pkt.coordinates.lat.toFixed(4)}, {pkt.coordinates.lng.toFixed(4)}
+                  <div className="flex items-center gap-2">
+                    <div className="flex items-center gap-1">
+                      <MapPin className="w-3 h-3 text-slate-500" />
+                      <span className="font-mono text-[10px]">
+                        {pkt.coordinates.lat.toFixed(4)}, {pkt.coordinates.lng.toFixed(4)}
+                      </span>
+                    </div>
+                    <span className="text-slate-600">&bull;</span>
+                    <span className="font-mono text-[10px] text-slate-400">
+                      {formatLatinDate(pkt.timestamp)}
                     </span>
                   </div>
 

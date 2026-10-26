@@ -19,7 +19,9 @@ import {
   ShieldCheck,
   Compass,
   Crosshair,
+  Clock,
 } from 'lucide-react';
+import { formatLatinDateTime } from '../utils/dateFormatter';
 
 interface TransmissionMonitorModalProps {
   isOpen: boolean;
@@ -36,10 +38,12 @@ export const TransmissionMonitorModal: React.FC<TransmissionMonitorModalProps> =
 
   if (!isOpen) return null;
 
-  // Sample packet structure
+  // Sample packet structure with strictly Latin date and time
+  const sampleNow = latestPacket?.timestamp || Date.now();
   const displayPacket = latestPacket || {
     id: 'pkt-live-98214',
-    timestamp: Date.now(),
+    timestamp: sampleNow,
+    formattedTimestampLatin: formatLatinDateTime(sampleNow),
     droneId: 'AGRO-DRONE-X4',
     coordinates: { lat: 31.8972, lng: -6.5891 },
     altitudeMeters: 24.5,
@@ -57,9 +61,9 @@ export const TransmissionMonitorModal: React.FC<TransmissionMonitorModalProps> =
       sprayAdvice: 'رياح نموذجية ومواتية للرش الدقيق بالدرون',
     },
     capturedMedia: {
-      type: 'image',
-      dataUrl: 'data:image/svg+xml;base64,...[HD Wheat Leaf Frame]',
-      label: 'لقطة درون: نصل ورقة القمح',
+      type: 'video',
+      dataUrl: 'data:video/mp4;base64,...[HD Wheat Aerial Video Stream]',
+      label: `مقطع مسح جوي [${formatLatinDateTime(sampleNow)}]`,
     },
   };
 
@@ -178,6 +182,9 @@ export const TransmissionMonitorModal: React.FC<TransmissionMonitorModalProps> =
                   </li>
                   <li>
                     <strong>النقل الفوري:</strong> عند الضغط على <strong>"إرسال إلى WheatGuard"</strong>، يتم إرسال الصورة/الفيديو إما عبر الرابط السحابي <code className="text-emerald-300 font-mono">POST /api/telemetry/push</code>، أو عبر قناة المزامنة اللحظية داخل المتصفح، لتظهر الصورة فوراً في واجهة WheatGuard ويبدأ الذكاء الاصطناعي بتحليلها تلقائياً.
+                  </li>
+                  <li className="text-emerald-300">
+                    <strong>توثيق التاريخ والوقت بالأرقام اللاتينية (Latin Numerals 0-9):</strong> عند بث أو إرسال مقطع فيديو أو صورة إلى WheatGuard، يتم توليد التاريخ والوقت حصراً بالأرقام اللاتينية (مثل <code className="font-mono text-white bg-slate-900 px-1 py-0.5 rounded border border-slate-700">2026-10-26 14:25:08</code>) في حزمة البيانات ووسوم شاشة الدرون HUD وشريط التنبيهات لتفادي الأرقام المشرقية وضمان الوضوح التام.
                   </li>
                 </ul>
               </div>

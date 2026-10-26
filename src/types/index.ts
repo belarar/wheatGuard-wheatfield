@@ -145,6 +145,7 @@ export interface CapturedSample {
 export interface TelemetryPacket {
   id: string;
   timestamp: number;
+  formattedTimestampLatin?: string; // Strictly Latin digits (0-9) e.g. "2026-10-26 14:25:08"
   droneId: string;
   coordinates: { lat: number; lng: number };
   altitudeMeters: number;

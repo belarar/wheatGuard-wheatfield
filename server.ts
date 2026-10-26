@@ -20,6 +20,7 @@ app.use(express.urlencoded({ extended: true, limit: '50mb' }));
 interface TelemetryPacket {
   id: string;
   timestamp: number;
+  formattedTimestampLatin?: string;
   droneId: string;
   missionName: string;
   coordinates: { lat: number; lng: number };
@@ -75,10 +76,15 @@ const ai = new GoogleGenAI({
 // API endpoint for receiving telemetry from WheatField drone
 app.post('/api/telemetry/push', (req: Request, res: Response) => {
   try {
+    const now = Date.now();
+    const d = new Date(now);
+    const latinDateTime = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')} ${String(d.getHours()).padStart(2, '0')}:${String(d.getMinutes()).padStart(2, '0')}:${String(d.getSeconds()).padStart(2, '0')}`;
+
     const packet: TelemetryPacket = {
       ...req.body,
-      id: req.body.id || `pkt-${Date.now()}-${Math.random().toString(36).substr(2, 6)}`,
-      timestamp: Date.now(),
+      id: req.body.id || `pkt-${now}-${Math.random().toString(36).substr(2, 6)}`,
+      timestamp: req.body.timestamp || now,
+      formattedTimestampLatin: req.body.formattedTimestampLatin || latinDateTime,
     };
 
     activeFieldState = {

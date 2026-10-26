@@ -18,6 +18,7 @@ import {
 import { DiagnosisCard } from './DiagnosisCard';
 import { DiseaseAlertsFeed } from './DiseaseAlertsFeed';
 import { HealthHeatmap } from './HealthHeatmap';
+import { formatLatinDateTime, formatLatinTime, formatLatinDate } from '../../utils/dateFormatter';
 import {
   ShieldAlert,
   Upload,
@@ -96,12 +97,15 @@ export const WheatGuardApp: React.FC<WheatGuardAppProps> = ({
         setActiveMediaType(latest.capturedMedia.type || 'image');
       }
 
+      const timeStampStr = latest.formattedTimestampLatin || formatLatinDateTime(latest.timestamp);
+      const mediaName = latest.capturedMedia?.type === 'video' ? 'مقطع فيديو جوي' : 'لقطة درون';
+
       if (latest.diagnosis) {
         setActiveDiagnosis(latest.diagnosis);
-        setSourceLabel(`لقطة درون WheatField (${latest.droneId})`);
+        setSourceLabel(`${mediaName} (${latest.droneId}) [${timeStampStr}]`);
       } else if (latest.capturedMedia?.dataUrl) {
         // Run Edge or API diagnosis immediately
-        handleRunDiagnosis(latest.capturedMedia.dataUrl, `درون ${latest.droneId}`);
+        handleRunDiagnosis(latest.capturedMedia.dataUrl, `${mediaName} (${latest.droneId}) [${timeStampStr}]`);
       }
     }
   }, [incomingPackets]);
@@ -280,11 +284,13 @@ export const WheatGuardApp: React.FC<WheatGuardAppProps> = ({
       setActiveImage(packet.capturedMedia.dataUrl);
       setActiveMediaType(packet.capturedMedia.type || 'image');
     }
+    const timeStampStr = packet.formattedTimestampLatin || formatLatinDateTime(packet.timestamp);
+    const mediaName = packet.capturedMedia?.type === 'video' ? 'مقطع فيديو جوي' : 'لقطة درون';
     if (packet.diagnosis) {
       setActiveDiagnosis(packet.diagnosis);
-      setSourceLabel(`لقطة درون WheatField (${packet.droneId})`);
+      setSourceLabel(`${mediaName} (${packet.droneId}) [${timeStampStr}]`);
     } else if (packet.capturedMedia?.dataUrl) {
-      handleRunDiagnosis(packet.capturedMedia.dataUrl, `درون ${packet.droneId}`);
+      handleRunDiagnosis(packet.capturedMedia.dataUrl, `${mediaName} (${packet.droneId}) [${timeStampStr}]`);
     }
   };
 
@@ -595,8 +601,18 @@ export const WheatGuardApp: React.FC<WheatGuardAppProps> = ({
               {/* Active Badge */}
               <div className="absolute bottom-3 left-3 bg-slate-950/85 backdrop-blur-md px-3 py-1 rounded-lg border border-slate-700 text-[11px] text-slate-300 flex items-center gap-1.5 z-20">
                 <span className="w-2 h-2 rounded-full bg-emerald-400 animate-pulse" />
-                <span>{sourceLabel}</span>
+                <span className="font-mono text-emerald-300">{sourceLabel}</span>
               </div>
+
+              {selectedPacketId && (
+                <div className="absolute bottom-3 right-3 bg-slate-950/90 backdrop-blur-md px-2.5 py-1 rounded-lg border border-emerald-500/40 text-[10px] font-mono text-emerald-300 flex items-center gap-1.5 z-20 shadow-lg">
+                  <span className="text-slate-400">توقيت الإرسال:</span>
+                  <span className="font-bold text-white bg-slate-900 px-1.5 py-0.5 rounded border border-slate-700">
+                    {incomingPackets.find((p) => p.id === selectedPacketId)?.formattedTimestampLatin ||
+                      formatLatinDateTime(incomingPackets.find((p) => p.id === selectedPacketId)?.timestamp)}
+                  </span>
+                </div>
+              )}
             </div>
 
             {/* Detected Bounding Boxes Targets Breakdown */}

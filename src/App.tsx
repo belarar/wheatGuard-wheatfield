@@ -15,6 +15,7 @@ import { GuideModal } from './components/GuideModal';
 import { TransmissionMonitorModal } from './components/TransmissionMonitorModal';
 import { MobileFrame } from './components/MobileFrame';
 import { CheckCircle2, ShieldCheck, Plane, Radio } from 'lucide-react';
+import { formatLatinDateTime } from './utils/dateFormatter';
 
 export default function App() {
   const [appMode, setAppMode] = useState<AppMode>('WHEAT_GUARD');
@@ -54,6 +55,7 @@ export default function App() {
     {
       id: 'pkt-init-01',
       timestamp: Date.now() - 1000 * 60 * 12,
+      formattedTimestampLatin: formatLatinDateTime(Date.now() - 1000 * 60 * 12),
       droneId: 'AGRO-DRONE-X4',
       coordinates: { lat: 31.8984, lng: -6.5872 },
       altitudeMeters: 22.0,
@@ -73,13 +75,14 @@ export default function App() {
       capturedMedia: {
         type: 'image',
         dataUrl: WHEAT_DISEASE_SAMPLES[0].imageUrl,
-        label: 'لقطة فحص جوي: الصدأ الأصفر',
+        label: `لقطة فحص جوي [${formatLatinDateTime(Date.now() - 1000 * 60 * 12)}]: الصدأ الأصفر`,
       },
       diagnosis: WHEAT_DISEASE_SAMPLES[0].precomputedDiagnosis as any,
     },
     {
       id: 'pkt-init-02',
       timestamp: Date.now() - 1000 * 60 * 45,
+      formattedTimestampLatin: formatLatinDateTime(Date.now() - 1000 * 60 * 45),
       droneId: 'AGRO-DRONE-X4',
       coordinates: { lat: 31.897, lng: -6.589 },
       altitudeMeters: 28.0,
@@ -99,7 +102,7 @@ export default function App() {
       capturedMedia: {
         type: 'image',
         dataUrl: WHEAT_DISEASE_SAMPLES[6].imageUrl,
-        label: 'لقطة مسح: قطاع قمح سليم',
+        label: `لقطة مسح [${formatLatinDateTime(Date.now() - 1000 * 60 * 45)}]: قطاع قمح سليم`,
       },
       diagnosis: WHEAT_DISEASE_SAMPLES[6].precomputedDiagnosis as any,
     },
@@ -111,7 +114,9 @@ export default function App() {
   const handleTransmitPacket = (packet: TelemetryPacket) => {
     setIncomingPackets((prev) => [packet, ...prev]);
 
-    setToastMessage(`تم إرسال لقطة الدرون (${packet.droneId}) وبيانات المستشعرات بنجاح إلى WheatGuard!`);
+    const timeLabel = packet.formattedTimestampLatin || formatLatinDateTime(packet.timestamp);
+    const mediaTypeLabel = packet.capturedMedia?.type === 'video' ? 'مقطع فيديو جوي' : 'لقطة درون';
+    setToastMessage(`تم إرسال ${mediaTypeLabel} (${packet.droneId}) [${timeLabel}] وبيانات المستشعرات بنجاح إلى WheatGuard!`);
     setTimeout(() => {
       setToastMessage(null);
     }, 4500);
