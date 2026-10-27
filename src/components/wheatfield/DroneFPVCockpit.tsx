@@ -419,6 +419,10 @@ export const DroneFPVCockpit: React.FC<DroneFPVCockpitProps> = ({
     onCapturePhoto(frameUrl, label);
   };
 
+  // Auto-recording countdown state for 1-touch video transmit
+  const [isAutoRecordingForSend, setIsAutoRecordingForSend] = useState<boolean>(false);
+  const [autoRecordCountdown, setAutoRecordCountdown] = useState<number>(3);
+
   const handleToggleRecord = async () => {
     if (!isRecording) {
       setCameraError(null);
@@ -449,12 +453,14 @@ export const DroneFPVCockpit: React.FC<DroneFPVCockpitProps> = ({
       if (typeof MediaRecorder !== 'undefined' && activeStream) {
         try {
           recordedChunksRef.current = [];
-          const preferredMime = MediaRecorder.isTypeSupported('video/webm;codecs=vp9')
+          const preferredMime = MediaRecorder.isTypeSupported('video/mp4')
+            ? 'video/mp4'
+            : MediaRecorder.isTypeSupported('video/webm;codecs=vp9')
             ? 'video/webm;codecs=vp9'
+            : MediaRecorder.isTypeSupported('video/webm;codecs=vp8')
+            ? 'video/webm;codecs=vp8'
             : MediaRecorder.isTypeSupported('video/webm')
             ? 'video/webm'
-            : MediaRecorder.isTypeSupported('video/mp4')
-            ? 'video/mp4'
             : '';
 
           const mr = preferredMime
@@ -514,50 +520,185 @@ export const DroneFPVCockpit: React.FC<DroneFPVCockpitProps> = ({
     }
   };
 
-  const handleSend = () => {
+  // One-touch 3-second live camera recording and instant video transmission to WheatGuard
+  const handleOneTouchVideoSend = async (seconds: number = 3) => {
+    if (isAutoRecordingForSend || isTransmitting) return;
+
+    let activeStream = mediaStreamRef.current;
+    if (!isUsingLiveCamera || !activeStream) {
+      activeStream = await startLiveCameraStream();
+      if (!activeStream) return;
+      await new Promise((r) => setTimeout(r, 400));
+    }
+
+    if (typeof MediaRecorder === 'undefined' || !activeStream) {
+      // Fallback: transmit current frame snapshot
+      handleSend();
+      return;
+    }
+
+    try {
+      setIsAutoRecordingForSend(true);
+      setAutoRecordCountdown(seconds);
+      const autoChunks: Blob[] = [];
+
+      const preferredMime = MediaRecorder.isTypeSupported('video/mp4')
+        ? 'video/mp4'
+        : MediaRecorder.isTypeSupported('video/webm;codecs=vp9')
+        ? 'video/webm;codecs=vp9'
+        : MediaRecorder.isTypeSupported('video/webm;codecs=vp8')
+        ? 'video/webm;codecs=vp8'
+        : MediaRecorder.isTypeSupported('video/webm')
+        ? 'video/webm'
+        : '';
+
+      const mr = preferredMime ? new MediaRecorder(activeStream, { mimeType: preferredMime }) : new MediaRecorder(activeStream);
+
+      mr.ondataavailable = (e) => {
+        if (e.data && e.data.size > 0) {
+          autoChunks.push(e.data);
+        }
+      };
+
+      mr.onstop = () => {
+        const blob = new Blob(autoChunks, { type: mr.mimeType || 'video/webm' });
+        const reader = new FileReader();
+        reader.onloadend = () => {
+          const videoDataUrl = reader.result as string;
+          const latinNow = formatLatinDateTime();
+          setRecordedVideoClip(videoDataUrl);
+          setRecordedAtLatin(latinNow);
+          setIsAutoRecordingForSend(false);
+          // Transmit video directly to WheatGuard
+          onTransmitToWheatGuard({
+            dataUrl: videoDataUrl,
+            type: 'video',
+            label: `مقطع فيديو حي مسجل من كاميرا الهاتف [${latinNow}]`,
+          });
+          setTransmissionSuccess(true);
+          setTimeout(() => setTransmissionSuccess(false), 3500);
+        };
+        reader.readAsDataURL(blob);
+      };
+
+      mr.start(250);
+
+      // Countdown timer
+      let remaining = seconds;
+      const timer = setInterval(() => {
+        remaining -= 1;
+        setAutoRecordCountdown(remaining);
+        if (remaining <= 0) {
+          clearInterval(timer);
+          if (mr.state !== 'inactive') {
+            try {
+              mr.stop();
+            } catch (_) {}
+          }
+        }
+      }, 1000);
+    } catch (err) {
+      console.warn('Auto record error:', err);
+      setIsAutoRecordingForSend(false);
+      handleSend();
+    }
+  };
+
+  const handleSend = (overrideMediaToSend?: { dataUrl: string; type: 'image' | 'video'; label?: string }) => {
     const latinNow = formatLatinDateTime();
 
-    // 1. If currently on live camera, capture the active camera frame right now and send as image!
-    if (isUsingLiveCamera && liveVideoRef.current) {
-      const frameUrl = getActiveFrameDataUrl();
-      onTransmitToWheatGuard({
-        dataUrl: frameUrl,
-        type: 'image',
-        label: `بث حي من كاميرا الجهاز [${latinNow}]`,
-      });
+    // 1. Explicit media override (e.g. from Send Video button)
+    if (overrideMediaToSend) {
+      onTransmitToWheatGuard(overrideMediaToSend);
+      setTransmissionSuccess(true);
+      setTimeout(() => setTransmissionSuccess(false), 3500);
+      return;
     }
-    // 2. If a video clip was recorded
-    else if (recordedVideoClip) {
-      const isRealVid = recordedVideoClip.startsWith('data:video/') || recordedVideoClip.startsWith('blob:');
+
+    // 2. If currently recording video manually, STOP the recorder and TRANSMIT that recorded video!
+    if (isRecording && mediaRecorderRef.current && mediaRecorderRef.current.state !== 'inactive') {
+      setIsRecording(false);
+      mediaRecorderRef.current.onstop = () => {
+        const blob = new Blob(recordedChunksRef.current, { type: mediaRecorderRef.current?.mimeType || 'video/webm' });
+        const reader = new FileReader();
+        reader.onloadend = () => {
+          const videoDataUrl = reader.result as string;
+          setRecordedVideoClip(videoDataUrl);
+          setRecordedAtLatin(latinNow);
+          onTransmitToWheatGuard({
+            dataUrl: videoDataUrl,
+            type: 'video',
+            label: `مقطع فيديو مسجل من كاميرا الجهاز [${latinNow}]`,
+          });
+          setTransmissionSuccess(true);
+          setTimeout(() => setTransmissionSuccess(false), 3500);
+        };
+        reader.readAsDataURL(blob);
+      };
+      try {
+        mediaRecorderRef.current.stop();
+      } catch (_) {}
+      return;
+    }
+
+    // 3. If a video clip was already recorded, SEND THE VIDEO CLIP!
+    if (recordedVideoClip) {
+      const isRealVid = !recordedVideoClip.startsWith('data:image/');
       onTransmitToWheatGuard({
         dataUrl: recordedVideoClip,
         type: isRealVid ? 'video' : 'image',
-        label: `مقطع مسجل من كاميرا الجهاز [${recordedAtLatin || latinNow}]`,
+        label: `مقطع فيديو مسجل من كاميرا الجهاز [${recordedAtLatin || latinNow}]`,
       });
+      setTransmissionSuccess(true);
+      setTimeout(() => setTransmissionSuccess(false), 3500);
+      return;
     }
-    // 3. If a custom video was uploaded
-    else if (customVideoUrl) {
+
+    // 4. If a custom video was uploaded
+    if (customVideoUrl) {
       onTransmitToWheatGuard({
         dataUrl: customVideoUrl,
         type: 'video',
         label: `فيديو ميداني مرفوع [${latinNow}]`,
       });
+      setTransmissionSuccess(true);
+      setTimeout(() => setTransmissionSuccess(false), 3500);
+      return;
     }
-    // 4. If a custom image was uploaded
-    else if (customImageUrl) {
+
+    // 5. If a custom image was uploaded
+    if (customImageUrl) {
       onTransmitToWheatGuard({
         dataUrl: customImageUrl,
         type: 'image',
         label: `صورة ميدانية مرفوعة [${latinNow}]`,
       });
-    }
-    // 5. Default preset sample
-    else {
-      onTransmitToWheatGuard();
+      setTransmissionSuccess(true);
+      setTimeout(() => setTransmissionSuccess(false), 3500);
+      return;
     }
 
+    // 6. If currently streaming live camera, capture the active camera frame right now and send
+    if (isUsingLiveCamera && liveVideoRef.current) {
+      const frameUrl = getActiveFrameDataUrl();
+      onTransmitToWheatGuard({
+        dataUrl: frameUrl,
+        type: 'image',
+        label: `لقطة حية من كاميرا الجهاز [${latinNow}]`,
+      });
+      setTransmissionSuccess(true);
+      setTimeout(() => setTransmissionSuccess(false), 3500);
+      return;
+    }
+
+    // 7. Default active sample preset
+    onTransmitToWheatGuard({
+      dataUrl: activeSample.imageUrl,
+      type: 'image',
+      label: `لقطة درون [${latinNow}]: ${activeSample.title}`,
+    });
     setTransmissionSuccess(true);
-    setTimeout(() => setTransmissionSuccess(false), 3000);
+    setTimeout(() => setTransmissionSuccess(false), 3500);
   };
 
   return (
@@ -660,6 +801,17 @@ export const DroneFPVCockpit: React.FC<DroneFPVCockpitProps> = ({
           >
             <Upload className="w-3.5 h-3.5" />
             <span>رفع ملف</span>
+          </button>
+
+          {/* 5. Quick Send to WheatGuard Button right in the top bar */}
+          <button
+            onClick={() => handleSend()}
+            disabled={isTransmitting}
+            className="flex items-center gap-1.5 px-3.5 py-1.5 rounded-lg bg-emerald-600 hover:bg-emerald-500 text-white font-bold text-xs shadow-md shadow-emerald-600/30 transition-all active:scale-95 ml-auto"
+            title="إرسال اللقطة الحالية فوراً إلى تطبيق WheatGuard"
+          >
+            <Send className="w-3.5 h-3.5" />
+            <span>إرسال لـ WheatGuard</span>
           </button>
         </div>
       </div>
@@ -887,12 +1039,102 @@ export const DroneFPVCockpit: React.FC<DroneFPVCockpitProps> = ({
             <span className="font-bold text-slate-100">{hudTimestamp}</span>
             <span className="text-[9px] text-amber-400">UTC</span>
           </div>
+
+          {/* Auto-recording overlay indicator */}
+          {isAutoRecordingForSend && (
+            <div className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 bg-rose-600/95 text-white font-bold text-xs sm:text-sm px-4 py-2.5 rounded-2xl shadow-2xl animate-pulse flex items-center gap-2 border border-white/20 z-30">
+              <span className="w-3 h-3 rounded-full bg-white animate-ping" />
+              <span>جاري تسجيل وإرسال مقطع فيديو ({autoRecordCountdown}s)...</span>
+            </div>
+          )}
+        </div>
+      </div>
+
+      {/* DEDICATED RESPONSIVE CONTROL DECK - 100% VISIBLE ON PHONES WITHOUT DESKTOP MODE */}
+      <div className="bg-slate-900/95 border border-slate-800 rounded-2xl p-3 sm:p-4 shadow-xl space-y-3">
+        {/* Row 1: Primary Transmission Actions (Large touch targets, prominent on mobile) */}
+        <div className="flex flex-col sm:flex-row items-stretch sm:items-center gap-2.5">
+          {/* Main Hero Send Button */}
+          <button
+            onClick={() => handleSend()}
+            disabled={isTransmitting || isAutoRecordingForSend}
+            className={`w-full sm:flex-1 py-3 px-4 rounded-xl font-black text-sm shadow-xl flex items-center justify-center gap-2.5 transition-all active:scale-[0.98] disabled:opacity-50 ${
+              transmissionSuccess
+                ? 'bg-emerald-600 text-white shadow-emerald-600/30'
+                : 'bg-gradient-to-r from-emerald-500 via-teal-500 to-emerald-600 hover:from-emerald-400 hover:to-teal-400 text-slate-950 shadow-emerald-500/25 ring-2 ring-emerald-400/40'
+            }`}
+            title="إرسال اللقطة الحالية أو مقطع الفيديو مباشرة إلى WheatGuard"
+          >
+            {isTransmitting ? (
+              <>
+                <Radio className="w-5 h-5 animate-spin text-slate-950" />
+                <span>جاري النقل والتحليل في WheatGuard...</span>
+              </>
+            ) : transmissionSuccess ? (
+              <>
+                <CheckCircle2 className="w-5 h-5 text-white" />
+                <span>تم الإرسال لـ WheatGuard بنجاح! ✅</span>
+              </>
+            ) : (
+              <>
+                <Send className="w-5 h-5 text-slate-950" />
+                <span>
+                  {recordedVideoClip
+                    ? 'إرسال مقطع الفيديو المسجل إلى WheatGuard'
+                    : isUsingLiveCamera
+                    ? 'إرسال لقطة الكاميرا الحية إلى WheatGuard'
+                    : 'إرسال إلى WheatGuard'}
+                </span>
+              </>
+            )}
+          </button>
+
+          {/* One-Tap 3-Second Live Camera Video Record & Direct Send */}
+          {isUsingLiveCamera && (
+            <button
+              onClick={() => handleOneTouchVideoSend(3)}
+              disabled={isTransmitting || isRecording || isAutoRecordingForSend}
+              className="w-full sm:w-auto py-3 px-4 rounded-xl bg-gradient-to-r from-rose-600 via-amber-600 to-rose-700 hover:from-rose-500 hover:to-amber-500 text-white font-black text-xs shadow-lg flex items-center justify-center gap-2 transition-all active:scale-[0.98] disabled:opacity-50 ring-1 ring-rose-400/30"
+              title="تسجيل فيديو مدته 3 ثوانٍ من الكاميرا وإرساله تلقائياً إلى WheatGuard بنقرة واحدة"
+            >
+              <Video className="w-4 h-4 text-white animate-pulse" />
+              <span>
+                {isAutoRecordingForSend
+                  ? `تسجيل فيديو وإرسال (${autoRecordCountdown}s)...`
+                  : 'تسجيل فيديو 3ث وإرسال فوري'}
+              </span>
+            </button>
+          )}
         </div>
 
-        {/* BOTTOM CONTROL DECK: Camera triggers, Zoom, Gimbal, Push to WheatGuard */}
-        <div className="relative z-20 bg-gradient-to-t from-slate-950/90 via-slate-950/70 to-transparent p-3 sm:p-4 flex flex-wrap items-center justify-between gap-3 border-t border-slate-800/60">
-          {/* Left: Lens & Zoom Controls */}
-          <div className="flex items-center gap-1.5 bg-slate-900/80 p-1 rounded-xl border border-slate-800">
+        {/* Row 2: Camera Actions & Optics Controls */}
+        <div className="flex flex-wrap items-center justify-between gap-2.5 pt-2 border-t border-slate-800/80">
+          {/* Shutter & Manual Video Record */}
+          <div className="flex items-center gap-2 flex-1 sm:flex-initial">
+            <button
+              onClick={handleSnapPhoto}
+              className="flex-1 sm:flex-initial flex items-center justify-center gap-1.5 px-3.5 py-2 rounded-xl bg-slate-100 hover:bg-white text-slate-950 font-bold text-xs shadow-md shadow-white/10 active:scale-95 transition-all"
+              title="التقاط صورة فوتوغرافية لنصل القمح"
+            >
+              <Camera className="w-4 h-4 text-emerald-600" />
+              <span>التقاط صورة</span>
+            </button>
+
+            <button
+              onClick={handleToggleRecord}
+              className={`flex-1 sm:flex-initial flex items-center justify-center gap-1.5 px-3.5 py-2 rounded-xl text-xs font-bold transition-all active:scale-95 ${
+                isRecording
+                  ? 'bg-rose-600 hover:bg-rose-500 text-white shadow-lg shadow-rose-600/40 animate-pulse'
+                  : 'bg-slate-800 hover:bg-slate-700 text-slate-200 border border-slate-700'
+              }`}
+            >
+              <Video className="w-4 h-4 text-rose-400" />
+              <span>{isRecording ? `إيقاف وحفظ (${recordSeconds}s)` : 'تسجيل فيديو'}</span>
+            </button>
+          </div>
+
+          {/* Optics: Zoom & Filters */}
+          <div className="flex items-center gap-1.5 bg-slate-950/80 p-1 rounded-xl border border-slate-800">
             {[1, 2, 4].map((z) => (
               <button
                 key={z}
@@ -935,75 +1177,49 @@ export const DroneFPVCockpit: React.FC<DroneFPVCockpitProps> = ({
               <span>كاشف AI ({activeBoxes.length})</span>
             </button>
           </div>
-
-          {/* Center: Camera Actions (Shutter & Video Record) */}
-          <div className="flex items-center gap-2">
-            {/* Photo Shutter */}
-            <button
-              onClick={handleSnapPhoto}
-              className="flex items-center gap-1.5 px-4 py-2 rounded-xl bg-slate-100 hover:bg-white text-slate-950 font-bold text-xs shadow-lg shadow-white/10 active:scale-95 transition-all"
-              title="التقاط صورة فوتوغرافية لنصل القمح"
-            >
-              <Camera className="w-4 h-4 text-emerald-600" />
-              <span>التقاط صورة</span>
-            </button>
-
-            {/* Video Clip Record */}
-            <button
-              onClick={handleToggleRecord}
-              className={`flex items-center gap-1.5 px-4 py-2 rounded-xl text-xs font-bold transition-all active:scale-95 ${
-                isRecording
-                  ? 'bg-rose-600 hover:bg-rose-500 text-white shadow-lg shadow-rose-600/40 animate-pulse'
-                  : 'bg-slate-800 hover:bg-slate-700 text-slate-200 border border-slate-700'
-              }`}
-            >
-              <Video className="w-4 h-4 text-rose-400" />
-              <span>{isRecording ? 'إيقاف التسجيل' : 'تسجيل فيديو'}</span>
-            </button>
-          </div>
-
-          {/* Right: Transmit to WheatGuard */}
-          <div className="flex items-center gap-2">
-            <button
-              onClick={handleSend}
-              disabled={isTransmitting}
-              className={`flex items-center gap-2 px-4 py-2 rounded-xl font-bold text-xs shadow-lg transition-all active:scale-95 disabled:opacity-50 ${
-                transmissionSuccess
-                  ? 'bg-emerald-600 text-white shadow-emerald-600/30'
-                  : 'bg-gradient-to-r from-emerald-500 to-teal-500 hover:from-emerald-400 hover:to-teal-400 text-slate-950 shadow-emerald-500/20'
-              }`}
-              title="نقل اللقطة وقراءات المستشعرات مباشرة إلى تطبيق WheatGuard"
-            >
-              {isTransmitting ? (
-                <Radio className="w-4 h-4 animate-spin text-slate-950" />
-              ) : transmissionSuccess ? (
-                <CheckCircle2 className="w-4 h-4 text-white" />
-              ) : (
-                <Send className="w-4 h-4 text-slate-950" />
-              )}
-              <span>{transmissionSuccess ? 'تم الإرسال لـ WheatGuard!' : 'إرسال إلى WheatGuard'}</span>
-            </button>
-          </div>
         </div>
       </div>
 
       {/* Recorded Video Clip Preview Bar (when recorded) */}
       {recordedVideoClip && (
-        <div className="p-3 bg-slate-900 border border-emerald-500/40 rounded-xl flex flex-wrap items-center justify-between gap-2 text-xs animate-fade-in">
-          <div className="flex flex-wrap items-center gap-2">
-            <CheckCircle2 className="w-4 h-4 text-emerald-400" />
-            <strong className="text-slate-100">تم تسجيل مقطع جوي بنجاح!</strong>
-            <span className="font-mono text-emerald-300 font-bold bg-emerald-950/60 px-2 py-0.5 rounded border border-emerald-500/30 text-[11px]">
-              توقيت التسجيل: {recordedAtLatin || hudTimestamp}
-            </span>
-            <span className="text-slate-400 hidden sm:inline">جاهز للإرسال والتحليل في WheatGuard</span>
+        <div className="p-3.5 bg-gradient-to-r from-slate-900 to-slate-950 border-2 border-emerald-500/50 rounded-2xl flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3 text-xs shadow-2xl animate-fade-in">
+          <div className="flex items-center gap-3 w-full sm:w-auto">
+            <div className="w-16 h-12 rounded-lg overflow-hidden bg-black shrink-0 border border-emerald-500/40 relative">
+              <video
+                src={recordedVideoClip}
+                autoPlay
+                loop
+                muted
+                playsInline
+                className="w-full h-full object-cover"
+              />
+              <span className="absolute bottom-0 right-0 bg-rose-600 text-white text-[8px] font-bold px-1 rounded-tl">
+                فيديو
+              </span>
+            </div>
+            <div>
+              <div className="flex items-center gap-2">
+                <CheckCircle2 className="w-4 h-4 text-emerald-400" />
+                <strong className="text-slate-100 text-sm">تم تسجيل مقطع جوي بنجاح!</strong>
+              </div>
+              <p className="font-mono text-emerald-300 text-[11px] mt-0.5">
+                توقيت التسجيل: {recordedAtLatin || hudTimestamp}
+              </p>
+            </div>
           </div>
           <button
-            onClick={handleSend}
-            className="flex items-center gap-1.5 px-3 py-1.5 bg-emerald-600 hover:bg-emerald-500 text-white rounded-lg font-bold shadow-md shadow-emerald-600/30"
+            onClick={() =>
+              handleSend({
+                dataUrl: recordedVideoClip,
+                type: 'video',
+                label: `مقطع مسح جوي مسجل [${recordedAtLatin || hudTimestamp}]`,
+              })
+            }
+            disabled={isTransmitting}
+            className="w-full sm:w-auto flex items-center justify-center gap-2 px-4 py-2.5 bg-emerald-500 hover:bg-emerald-400 text-slate-950 rounded-xl font-black shadow-lg shadow-emerald-500/30 transition-all active:scale-95"
           >
-            <Send className="w-3.5 h-3.5" />
-            <span>إرسال الفيديو إلى WheatGuard</span>
+            <Send className="w-4 h-4 text-slate-950" />
+            <span>إرسال الفيديو إلى WheatGuard الآن</span>
           </button>
         </div>
       )}

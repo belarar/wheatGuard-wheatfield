@@ -60,18 +60,37 @@ export const WheatGuardApp: React.FC<WheatGuardAppProps> = ({
   onSelectParcel,
   onSwitchToDrone,
 }) => {
+  const latestInitialPacket = incomingPackets[0];
+  const initialMedia = latestInitialPacket?.capturedMedia;
+  const initialTimeLabel =
+    latestInitialPacket?.formattedTimestampLatin ||
+    (latestInitialPacket ? formatLatinDateTime(latestInitialPacket.timestamp) : '');
+  const initialMediaName = initialMedia?.type === 'video' ? 'مقطع فيديو جوي' : 'لقطة درون';
+
   // Current active sample for diagnosis
-  const [activeImage, setActiveImage] = useState<string>(WHEAT_DISEASE_SAMPLES[0].imageUrl);
-  const [rawImage, setRawImage] = useState<string>(WHEAT_DISEASE_SAMPLES[0].imageUrl);
-  const [activeMediaType, setActiveMediaType] = useState<'image' | 'video'>('image');
+  const [activeImage, setActiveImage] = useState<string>(
+    initialMedia?.dataUrl || WHEAT_DISEASE_SAMPLES[0].imageUrl
+  );
+  const [rawImage, setRawImage] = useState<string>(
+    initialMedia?.dataUrl || WHEAT_DISEASE_SAMPLES[0].imageUrl
+  );
+  const [activeMediaType, setActiveMediaType] = useState<'image' | 'video'>(
+    initialMedia?.type || 'image'
+  );
   const [showBoundingBoxes, setShowBoundingBoxes] = useState<boolean>(true);
   const [activeDiagnosis, setActiveDiagnosis] = useState<WheatDiseaseDiagnosis | null>(
-    (WHEAT_DISEASE_SAMPLES[0].precomputedDiagnosis as WheatDiseaseDiagnosis) || null
+    (latestInitialPacket?.diagnosis as WheatDiseaseDiagnosis) ||
+      (WHEAT_DISEASE_SAMPLES[0].precomputedDiagnosis as WheatDiseaseDiagnosis) ||
+      null
   );
   const [isDiagnosing, setIsDiagnosing] = useState(false);
-  const [selectedSampleId, setSelectedSampleId] = useState<string>(WHEAT_DISEASE_SAMPLES[0].id);
-  const [selectedPacketId, setSelectedPacketId] = useState<string | undefined>(undefined);
-  const [sourceLabel, setSourceLabel] = useState<string>('عينة الصدأ الأصفر الميدانية');
+  const [selectedSampleId, setSelectedSampleId] = useState<string>(latestInitialPacket ? '' : WHEAT_DISEASE_SAMPLES[0].id);
+  const [selectedPacketId, setSelectedPacketId] = useState<string | undefined>(latestInitialPacket?.id);
+  const [sourceLabel, setSourceLabel] = useState<string>(
+    latestInitialPacket
+      ? `${initialMediaName} (${latestInitialPacket.droneId}) [${initialTimeLabel}]`
+      : 'عينة الصدأ الأصفر الميدانية'
+  );
   const [errorMsg, setErrorMsg] = useState<string | null>(null);
 
   // Preprocessing (White balance + Contrast dynamic range expansion)
@@ -82,7 +101,7 @@ export const WheatGuardApp: React.FC<WheatGuardAppProps> = ({
 
   const fileInputRef = useRef<HTMLInputElement>(null);
   const cameraCaptureInputRef = useRef<HTMLInputElement>(null);
-  const prevLatestPacketIdRef = useRef<string | undefined>(incomingPackets[0]?.id);
+  const prevLatestPacketIdRef = useRef<string | undefined>(undefined);
 
   // Auto-sync whenever a new packet is transmitted from WheatField drone
   useEffect(() => {
@@ -93,13 +112,26 @@ export const WheatGuardApp: React.FC<WheatGuardAppProps> = ({
       setSelectedSampleId('');
 
       if (latest.capturedMedia?.dataUrl) {
-        setRawImage(latest.capturedMedia.dataUrl);
-        setActiveImage(latest.capturedMedia.dataUrl);
-        setActiveMediaType(latest.capturedMedia.type || 'image');
+        const mediaUrl = latest.capturedMedia.dataUrl;
+        const isVid =
+          latest.capturedMedia.type === 'video' ||
+          mediaUrl.startsWith('data:video/') ||
+          mediaUrl.startsWith('blob:') ||
+          mediaUrl.endsWith('.mp4') ||
+          mediaUrl.endsWith('.webm') ||
+          Boolean(latest.capturedMedia.label?.includes('فيديو'));
+
+        setRawImage(mediaUrl);
+        setActiveImage(mediaUrl);
+        setActiveMediaType(isVid ? 'video' : 'image');
       }
 
       const timeStampStr = latest.formattedTimestampLatin || formatLatinDateTime(latest.timestamp);
-      const mediaName = latest.capturedMedia?.type === 'video' ? 'مقطع فيديو جوي' : 'لقطة درون';
+      const isVid =
+        latest.capturedMedia?.type === 'video' ||
+        latest.capturedMedia?.dataUrl?.startsWith('data:video/') ||
+        Boolean(latest.capturedMedia?.label?.includes('فيديو'));
+      const mediaName = isVid ? 'مقطع فيديو جوي' : 'لقطة درون';
 
       if (latest.diagnosis) {
         setActiveDiagnosis(latest.diagnosis);
@@ -555,29 +587,41 @@ export const WheatGuardApp: React.FC<WheatGuardAppProps> = ({
             <div className="relative aspect-video w-full bg-slate-950 rounded-xl overflow-hidden border border-slate-800 flex items-center justify-center shadow-inner">
               {(() => {
                 const currentMediaSrc =
-                  activeViewMode === 'preprocessed' && activeImage
+                  activeMediaType === 'video'
+                    ? rawImage || activeImage
+                    : activeViewMode === 'preprocessed' && activeImage
                     ? activeImage
                     : rawImage || activeImage || WHEAT_DISEASE_SAMPLES[0].imageUrl;
 
                 const isActuallyVideo =
-                  !currentMediaSrc.startsWith('data:image/') &&
-                  (currentMediaSrc.startsWith('data:video/') ||
-                    currentMediaSrc.startsWith('blob:') ||
-                    currentMediaSrc.endsWith('.mp4') ||
-                    currentMediaSrc.endsWith('.webm') ||
-                    activeMediaType === 'video');
+                  activeMediaType === 'video' ||
+                  Boolean(
+                    currentMediaSrc &&
+                      !currentMediaSrc.startsWith('data:image/') &&
+                      (currentMediaSrc.startsWith('data:video/') ||
+                        currentMediaSrc.startsWith('blob:') ||
+                        currentMediaSrc.endsWith('.mp4') ||
+                        currentMediaSrc.endsWith('.webm') ||
+                        sourceLabel?.includes('فيديو'))
+                  );
 
                 return isActuallyVideo ? (
-                  <video
-                    key={currentMediaSrc}
-                    src={currentMediaSrc}
-                    controls
-                    autoPlay
-                    loop
-                    muted
-                    playsInline
-                    className="w-full h-full object-cover"
-                  />
+                  <div className="relative w-full h-full flex items-center justify-center bg-black">
+                    <video
+                      key={currentMediaSrc}
+                      src={currentMediaSrc}
+                      controls
+                      autoPlay
+                      loop
+                      muted
+                      playsInline
+                      className="w-full h-full object-contain sm:object-cover"
+                    />
+                    <div className="absolute top-3 right-3 bg-rose-600/90 text-white text-[11px] font-bold px-2.5 py-1 rounded-full flex items-center gap-1.5 shadow-lg animate-pulse z-30 pointer-events-none">
+                      <span className="w-2 h-2 rounded-full bg-white animate-ping" />
+                      <span>مقطع مسح فيديو جوي نشط</span>
+                    </div>
+                  </div>
                 ) : (
                   <img
                     key={currentMediaSrc}
