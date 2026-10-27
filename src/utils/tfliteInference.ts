@@ -319,6 +319,20 @@ export async function preprocess640Image(
     };
   }
 
+  // If the source is a playable video file, return sourceUrl safely without crashing Image loader
+  if (sourceUrl.startsWith('data:video/') || sourceUrl.startsWith('blob:') || sourceUrl.endsWith('.mp4') || sourceUrl.endsWith('.webm')) {
+    return {
+      preprocessedDataUrl: sourceUrl,
+      originalDataUrl: sourceUrl,
+      metrics: {
+        applied: false,
+        whiteBalanceCorrection: { gainR: 1, gainG: 1, gainB: 1, colorTempShiftKelvin: '0K', neutralizedCast: 'فيديو مسجل' },
+        contrastCorrection: { originalMinLum: 0, originalMaxLum: 255, contrastGainPercent: 0, dynamicRangeExpanded: false },
+        resolution: { targetWidth: 640, targetHeight: 640 },
+      },
+    };
+  }
+
   const img = new Image();
   img.crossOrigin = 'anonymous';
   await new Promise<void>((resolve, reject) => {

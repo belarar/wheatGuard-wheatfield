@@ -553,21 +553,40 @@ export const WheatGuardApp: React.FC<WheatGuardAppProps> = ({
 
             {/* Image/Video Preview Container */}
             <div className="relative aspect-video w-full bg-slate-950 rounded-xl overflow-hidden border border-slate-800 flex items-center justify-center shadow-inner">
-              {activeMediaType === 'video' ? (
-                <video
-                  src={activeViewMode === 'preprocessed' ? activeImage : rawImage}
-                  controls
-                  autoPlay
-                  loop
-                  className="w-full h-full object-cover"
-                />
-              ) : (
-                <img
-                  src={activeViewMode === 'preprocessed' ? activeImage : rawImage}
-                  alt="عينة القمح المراد فحصها"
-                  className="w-full h-full object-cover"
-                />
-              )}
+              {(() => {
+                const currentMediaSrc =
+                  activeViewMode === 'preprocessed' && activeImage
+                    ? activeImage
+                    : rawImage || activeImage || WHEAT_DISEASE_SAMPLES[0].imageUrl;
+
+                const isActuallyVideo =
+                  !currentMediaSrc.startsWith('data:image/') &&
+                  (currentMediaSrc.startsWith('data:video/') ||
+                    currentMediaSrc.startsWith('blob:') ||
+                    currentMediaSrc.endsWith('.mp4') ||
+                    currentMediaSrc.endsWith('.webm') ||
+                    activeMediaType === 'video');
+
+                return isActuallyVideo ? (
+                  <video
+                    key={currentMediaSrc}
+                    src={currentMediaSrc}
+                    controls
+                    autoPlay
+                    loop
+                    muted
+                    playsInline
+                    className="w-full h-full object-cover"
+                  />
+                ) : (
+                  <img
+                    key={currentMediaSrc}
+                    src={currentMediaSrc}
+                    alt="عينة القمح المراد فحصها"
+                    className="w-full h-full object-cover"
+                  />
+                );
+              })()}
 
               {/* Bounding Box Detection Overlay with Disease Names & Confidence */}
               {showBoundingBoxes && activeDiagnosis?.boundingBoxes && (

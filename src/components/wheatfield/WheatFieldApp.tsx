@@ -337,14 +337,15 @@ export const WheatFieldApp: React.FC<WheatFieldAppProps> = ({
                 label: label || `لقطة فورية: ${activeSample.title}`,
               })
             }
-            onRecordVideo={(dataUrl, label) =>
+            onRecordVideo={(dataUrl, label) => {
+              const isActualVid = dataUrl.startsWith('data:video/') || dataUrl.startsWith('blob:');
               handleTransmit({
                 dataUrl,
-                type: 'video',
+                type: isActualVid ? 'video' : 'image',
                 label: label || `مقطع مسح جوي: ${activeSample.title}`,
-              })
-            }
-            onTransmitToWheatGuard={() => handleTransmit()}
+              });
+            }}
+            onTransmitToWheatGuard={(customMedia) => handleTransmit(customMedia)}
             isTransmitting={isTransmitting}
             onCustomMediaLoaded={(mediaUrl, mediaType, label) => {
               setActiveCustomMedia({ dataUrl: mediaUrl, type: mediaType, label });

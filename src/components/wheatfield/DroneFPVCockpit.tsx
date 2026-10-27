@@ -33,7 +33,7 @@ interface DroneFPVCockpitProps {
   activeSample: CapturedSample;
   onCapturePhoto: (capturedDataUrl: string, label?: string) => void;
   onRecordVideo: (capturedDataUrl: string, label?: string) => void;
-  onTransmitToWheatGuard: () => void;
+  onTransmitToWheatGuard: (customMedia?: { dataUrl: string; type: 'image' | 'video'; label?: string }) => void;
   isTransmitting: boolean;
   onCustomMediaLoaded?: (mediaUrl: string, mediaType: 'image' | 'video', label: string) => void;
 }
@@ -76,6 +76,8 @@ export const DroneFPVCockpit: React.FC<DroneFPVCockpitProps> = ({
   const liveVideoRef = useRef<HTMLVideoElement>(null);
   const customVideoRef = useRef<HTMLVideoElement>(null);
   const mediaStreamRef = useRef<MediaStream | null>(null);
+  const mediaRecorderRef = useRef<MediaRecorder | null>(null);
+  const recordedChunksRef = useRef<Blob[]>([]);
 
   // Video recording timer & live Latin OSD clock
   const [hudTimestamp, setHudTimestamp] = useState<string>(formatLatinDateTime());
@@ -420,8 +422,9 @@ export const DroneFPVCockpit: React.FC<DroneFPVCockpitProps> = ({
   const handleToggleRecord = async () => {
     if (!isRecording) {
       setCameraError(null);
+      let activeStream = mediaStreamRef.current;
       // If live camera is not running and no custom user media is loaded, activate camera for recording
-      if (!isUsingLiveCamera || !mediaStreamRef.current) {
+      if (!isUsingLiveCamera || !activeStream) {
         if (typeof navigator !== 'undefined' && navigator.permissions && navigator.permissions.query) {
           try {
             const perm = await navigator.permissions.query({ name: 'camera' as any });
@@ -435,33 +438,124 @@ export const DroneFPVCockpit: React.FC<DroneFPVCockpitProps> = ({
           } catch (_) {}
         }
 
-        const stream = await startLiveCameraStream();
-        if (!stream) {
+        activeStream = await startLiveCameraStream();
+        if (!activeStream) {
           return;
         }
         await new Promise((resolve) => setTimeout(resolve, 350));
+      }
+
+      // Start MediaRecorder if supported to create actual playable video stream
+      if (typeof MediaRecorder !== 'undefined' && activeStream) {
+        try {
+          recordedChunksRef.current = [];
+          const preferredMime = MediaRecorder.isTypeSupported('video/webm;codecs=vp9')
+            ? 'video/webm;codecs=vp9'
+            : MediaRecorder.isTypeSupported('video/webm')
+            ? 'video/webm'
+            : MediaRecorder.isTypeSupported('video/mp4')
+            ? 'video/mp4'
+            : '';
+
+          const mr = preferredMime
+            ? new MediaRecorder(activeStream, { mimeType: preferredMime })
+            : new MediaRecorder(activeStream);
+
+          mr.ondataavailable = (e) => {
+            if (e.data && e.data.size > 0) {
+              recordedChunksRef.current.push(e.data);
+            }
+          };
+
+          mr.onstop = () => {
+            const blob = new Blob(recordedChunksRef.current, { type: mr.mimeType || 'video/webm' });
+            const reader = new FileReader();
+            reader.onloadend = () => {
+              const videoDataUrl = reader.result as string;
+              const latinNow = formatLatinDateTime();
+              setRecordedVideoClip(videoDataUrl);
+              setRecordedAtLatin(latinNow);
+              onRecordVideo(videoDataUrl, `مقطع مسح جوي حي من كاميرا الجهاز [${latinNow}]`);
+            };
+            reader.readAsDataURL(blob);
+          };
+
+          mr.start(250);
+          mediaRecorderRef.current = mr;
+        } catch (mrErr) {
+          console.warn('MediaRecorder init error, using snapshot fallback:', mrErr);
+        }
       }
 
       setIsRecording(true);
       setRecordedVideoClip(null);
     } else {
       setIsRecording(false);
-      const frameUrl = getActiveFrameDataUrl();
       const latinNow = formatLatinDateTime();
-      setRecordedAtLatin(latinNow);
-      setRecordedVideoClip(frameUrl);
-      const label = isUsingLiveCamera
-        ? `مقطع مسح جوي حي من كاميرا الجهاز [${latinNow}]`
-        : customVideoUrl
-        ? `فيديو ميداني مسجل [${latinNow}]`
-        : `مقطع مسح جوي: ${activeSample.title}`;
 
-      onRecordVideo(frameUrl, label);
+      // If MediaRecorder was running, stopping it triggers mr.onstop and emits the playable video
+      if (mediaRecorderRef.current && mediaRecorderRef.current.state !== 'inactive') {
+        try {
+          mediaRecorderRef.current.stop();
+        } catch (_) {}
+      } else {
+        // Fallback: capture active frame snapshot
+        const frameUrl = getActiveFrameDataUrl();
+        setRecordedAtLatin(latinNow);
+        setRecordedVideoClip(frameUrl);
+        const label = isUsingLiveCamera
+          ? `لقطة من كاميرا الجهاز [${latinNow}]`
+          : customVideoUrl
+          ? `فيديو ميداني مسجل [${latinNow}]`
+          : `مقطع مسح جوي: ${activeSample.title}`;
+
+        onRecordVideo(frameUrl, label);
+      }
     }
   };
 
   const handleSend = () => {
-    onTransmitToWheatGuard();
+    const latinNow = formatLatinDateTime();
+
+    // 1. If currently on live camera, capture the active camera frame right now and send as image!
+    if (isUsingLiveCamera && liveVideoRef.current) {
+      const frameUrl = getActiveFrameDataUrl();
+      onTransmitToWheatGuard({
+        dataUrl: frameUrl,
+        type: 'image',
+        label: `بث حي من كاميرا الجهاز [${latinNow}]`,
+      });
+    }
+    // 2. If a video clip was recorded
+    else if (recordedVideoClip) {
+      const isRealVid = recordedVideoClip.startsWith('data:video/') || recordedVideoClip.startsWith('blob:');
+      onTransmitToWheatGuard({
+        dataUrl: recordedVideoClip,
+        type: isRealVid ? 'video' : 'image',
+        label: `مقطع مسجل من كاميرا الجهاز [${recordedAtLatin || latinNow}]`,
+      });
+    }
+    // 3. If a custom video was uploaded
+    else if (customVideoUrl) {
+      onTransmitToWheatGuard({
+        dataUrl: customVideoUrl,
+        type: 'video',
+        label: `فيديو ميداني مرفوع [${latinNow}]`,
+      });
+    }
+    // 4. If a custom image was uploaded
+    else if (customImageUrl) {
+      onTransmitToWheatGuard({
+        dataUrl: customImageUrl,
+        type: 'image',
+        label: `صورة ميدانية مرفوعة [${latinNow}]`,
+      });
+    }
+    // 5. Default preset sample
+    else {
+      onTransmitToWheatGuard();
+    }
+
     setTransmissionSuccess(true);
     setTimeout(() => setTransmissionSuccess(false), 3000);
   };
