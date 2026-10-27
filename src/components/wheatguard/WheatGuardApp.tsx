@@ -81,6 +81,7 @@ export const WheatGuardApp: React.FC<WheatGuardAppProps> = ({
   const [showComparisonModal, setShowComparisonModal] = useState<boolean>(false);
 
   const fileInputRef = useRef<HTMLInputElement>(null);
+  const cameraCaptureInputRef = useRef<HTMLInputElement>(null);
   const prevLatestPacketIdRef = useRef<string | undefined>(incomingPackets[0]?.id);
 
   // Auto-sync whenever a new packet is transmitted from WheatField drone
@@ -394,7 +395,7 @@ export const WheatGuardApp: React.FC<WheatGuardAppProps> = ({
               </div>
 
               {/* Upload & Re-run buttons */}
-              <div className="flex items-center gap-2">
+              <div className="flex flex-wrap items-center gap-2">
                 <input
                   type="file"
                   ref={fileInputRef}
@@ -402,6 +403,24 @@ export const WheatGuardApp: React.FC<WheatGuardAppProps> = ({
                   accept="image/*,video/*"
                   className="hidden"
                 />
+                <input
+                  type="file"
+                  ref={cameraCaptureInputRef}
+                  onChange={handleFileUpload}
+                  accept="image/*,video/*"
+                  capture="environment"
+                  className="hidden"
+                />
+
+                <button
+                  onClick={() => cameraCaptureInputRef.current?.click()}
+                  className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-emerald-700 hover:bg-emerald-600 text-white text-xs border border-emerald-600 font-semibold transition-colors shadow-sm"
+                  title="فتح كاميرا الهاتف مباشرة لالتقاط صورة أو فيديو من الحقل"
+                >
+                  <Camera className="w-3.5 h-3.5 text-emerald-200" />
+                  <span>التقاط بالكاميرا الميدانية</span>
+                </button>
+
                 <button
                   onClick={() => fileInputRef.current?.click()}
                   className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-slate-800 hover:bg-slate-700 text-slate-200 text-xs border border-slate-700 transition-colors"

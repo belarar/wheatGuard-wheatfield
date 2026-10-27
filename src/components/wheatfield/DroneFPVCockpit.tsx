@@ -31,8 +31,8 @@ import { formatLatinDateTime, formatLatinTime } from '../../utils/dateFormatter'
 interface DroneFPVCockpitProps {
   droneState: DroneState;
   activeSample: CapturedSample;
-  onCapturePhoto: (capturedDataUrl: string) => void;
-  onRecordVideo: (capturedDataUrl: string) => void;
+  onCapturePhoto: (capturedDataUrl: string, label?: string) => void;
+  onRecordVideo: (capturedDataUrl: string, label?: string) => void;
   onTransmitToWheatGuard: () => void;
   isTransmitting: boolean;
   onCustomMediaLoaded?: (mediaUrl: string, mediaType: 'image' | 'video', label: string) => void;
@@ -63,10 +63,15 @@ export const DroneFPVCockpit: React.FC<DroneFPVCockpitProps> = ({
   const [customVideoUrl, setCustomVideoUrl] = useState<string | null>(null);
   const [customImageUrl, setCustomImageUrl] = useState<string | null>(null);
   const [isUsingLiveCamera, setIsUsingLiveCamera] = useState<boolean>(false);
+  const [cameraFacing, setCameraFacing] = useState<'environment' | 'user'>('environment');
+  const [isCameraStarting, setIsCameraStarting] = useState<boolean>(false);
+  const [cameraError, setCameraError] = useState<string | null>(null);
   const [recordedVideoClip, setRecordedVideoClip] = useState<string | null>(null);
   const [isPlayingRecorded, setIsPlayingRecorded] = useState<boolean>(false);
 
   const fileInputRef = useRef<HTMLInputElement>(null);
+  const nativeCameraPhotoRef = useRef<HTMLInputElement>(null);
+  const nativeCameraVideoRef = useRef<HTMLInputElement>(null);
   const liveVideoRef = useRef<HTMLVideoElement>(null);
   const customVideoRef = useRef<HTMLVideoElement>(null);
   const mediaStreamRef = useRef<MediaStream | null>(null);
@@ -94,68 +99,183 @@ export const DroneFPVCockpit: React.FC<DroneFPVCockpitProps> = ({
     return () => clearInterval(interval);
   }, [isRecording]);
 
-  // Handle Live Camera Stream toggle (Webcam or Smartphone Camera)
-  const toggleLiveCamera = async () => {
-    if (isUsingLiveCamera) {
-      // Stop live camera
-      if (mediaStreamRef.current) {
-        mediaStreamRef.current.getTracks().forEach((track) => track.stop());
-        mediaStreamRef.current = null;
-      }
-      setIsUsingLiveCamera(false);
+  // Safely stop live camera stream
+  const stopLiveCameraStream = () => {
+    if (mediaStreamRef.current) {
+      mediaStreamRef.current.getTracks().forEach((track) => {
+        try {
+          track.stop();
+        } catch (_) {}
+      });
+      mediaStreamRef.current = null;
+    }
+    if (liveVideoRef.current) {
+      liveVideoRef.current.srcObject = null;
+    }
+    setIsUsingLiveCamera(false);
+    setIsCameraStarting(false);
+  };
+
+  // Start live camera stream with robust multi-tier fallback for mobile devices
+  const startLiveCameraStream = async (facing: 'environment' | 'user' = cameraFacing) => {
+    setCameraError(null);
+    setIsCameraStarting(true);
+
+    // Stop existing stream if any
+    if (mediaStreamRef.current) {
+      mediaStreamRef.current.getTracks().forEach((t) => {
+        try {
+          t.stop();
+        } catch (_) {}
+      });
+      mediaStreamRef.current = null;
+    }
+
+    if (typeof navigator === 'undefined' || !navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) {
+      setIsCameraStarting(false);
+      setCameraError(
+        'المتصفح أو بيئة الإطار الحالي لا تتيح تشغيل WebRTC المباشر. يمكنك استخدام أزرار "التقاط صورة بالكاميرا" أو "تسجيل فيديو بالكاميرا" بالأسفل لفتح تطبيق كاميرا هاتفك فوراً.'
+      );
       return;
     }
 
+    let stream: MediaStream | null = null;
     try {
-      const stream = await navigator.mediaDevices.getUserMedia({
-        video: { facingMode: 'environment', width: { ideal: 1280 }, height: { ideal: 720 } },
+      // Tier 1: Prefer rear environment camera with ideal resolution
+      stream = await navigator.mediaDevices.getUserMedia({
+        video: {
+          facingMode: { ideal: facing },
+          width: { ideal: 1280 },
+          height: { ideal: 720 },
+        },
         audio: false,
       });
+    } catch (e1) {
+      console.warn('Camera Tier 1 failed, attempting Tier 2 (facingMode ideal)...', e1);
+      try {
+        // Tier 2: facingMode without resolution requirements
+        stream = await navigator.mediaDevices.getUserMedia({
+          video: { facingMode: { ideal: facing } },
+          audio: false,
+        });
+      } catch (e2) {
+        console.warn('Camera Tier 2 failed, attempting Tier 3 (any video stream)...', e2);
+        try {
+          // Tier 3: any available video device
+          stream = await navigator.mediaDevices.getUserMedia({
+            video: true,
+            audio: false,
+          });
+        } catch (e3: any) {
+          console.error('All camera attempts failed:', e3);
+          setIsCameraStarting(false);
+          let errText = 'تعذر تشغيل كاميرا الجهاز.';
+          if (e3.name === 'NotAllowedError' || e3.name === 'PermissionDeniedError') {
+            errText = 'تم رفض إذن الكاميرا من إعدادات المتصفح. يرجى تفعيل إذن الكاميرا أو استخدام زر "التقاط صورة بالكاميرا" لفتح تطبيق الهاتف.';
+          } else if (e3.name === 'NotFoundError' || e3.name === 'DevicesNotFoundError') {
+            errText = 'لم يتم العثور على كاميرا متصلة بالجهاز.';
+          } else if (e3.name === 'NotReadableError' || e3.name === 'TrackStartError') {
+            errText = 'الكاميرا قيد الاستخدام حالياً بواسطة تطبيق آخر.';
+          } else if (e3.message) {
+            errText += ` (${e3.message})`;
+          }
+          setCameraError(errText);
+          return;
+        }
+      }
+    }
+
+    if (stream) {
       mediaStreamRef.current = stream;
-      setIsUsingLiveCamera(true);
       setCustomVideoUrl(null);
       setCustomImageUrl(null);
+      setIsUsingLiveCamera(true);
+      setIsCameraStarting(false);
+
       if (liveVideoRef.current) {
-        liveVideoRef.current.srcObject = stream;
-        liveVideoRef.current.play();
+        const video = liveVideoRef.current;
+        video.srcObject = stream;
+        video.muted = true;
+        video.playsInline = true;
+        video.setAttribute('playsinline', 'true');
+        video.setAttribute('webkit-playsinline', 'true');
+        video.play().catch((playErr) => {
+          console.warn('Video element play() caught:', playErr);
+        });
       }
-    } catch (err: any) {
-      alert('تعذر الوصول إلى الكاميرا: ' + (err.message || 'تأكد من إعطاء إذن الكاميرا للمتصفح.'));
     }
   };
+
+  // Toggle live camera on/off
+  const toggleLiveCamera = async () => {
+    if (isUsingLiveCamera) {
+      stopLiveCameraStream();
+    } else {
+      await startLiveCameraStream(cameraFacing);
+    }
+  };
+
+  // Switch between back and front camera
+  const flipCameraFacing = async () => {
+    const nextFacing = cameraFacing === 'environment' ? 'user' : 'environment';
+    setCameraFacing(nextFacing);
+    if (isUsingLiveCamera) {
+      await startLiveCameraStream(nextFacing);
+    }
+  };
+
+  // Ensure stream stays bound whenever isUsingLiveCamera is active
+  useEffect(() => {
+    if (isUsingLiveCamera && liveVideoRef.current && mediaStreamRef.current) {
+      const video = liveVideoRef.current;
+      if (video.srcObject !== mediaStreamRef.current) {
+        video.srcObject = mediaStreamRef.current;
+      }
+      video.muted = true;
+      video.playsInline = true;
+      video.setAttribute('playsinline', 'true');
+      video.setAttribute('webkit-playsinline', 'true');
+      video.play().catch((err) => {
+        console.warn('Live video auto-start catch:', err);
+      });
+    }
+  }, [isUsingLiveCamera]);
 
   // Cleanup camera stream on unmount
   useEffect(() => {
     return () => {
       if (mediaStreamRef.current) {
-        mediaStreamRef.current.getTracks().forEach((t) => t.stop());
+        mediaStreamRef.current.getTracks().forEach((t) => {
+          try {
+            t.stop();
+          } catch (_) {}
+        });
       }
     };
   }, []);
 
-  // Handle uploading user custom image or video
-  const handleUserFileUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
-    const file = e.target.files?.[0];
+  // Handle uploading or capturing user custom image or video
+  const handleUserFileUpload = (file?: File, forcedType?: 'image' | 'video') => {
     if (!file) return;
 
-    const isVideo = file.type.startsWith('video/');
+    const isVideo = forcedType === 'video' || file.type.startsWith('video/');
     const reader = new FileReader();
 
     reader.onload = (event) => {
       const dataUrl = event.target?.result as string;
+      stopLiveCameraStream();
+
       if (isVideo) {
         setCustomVideoUrl(dataUrl);
         setCustomImageUrl(null);
-        setIsUsingLiveCamera(false);
         if (onCustomMediaLoaded) {
-          onCustomMediaLoaded(dataUrl, 'video', `فيديو ميداني مرفوع: ${file.name}`);
+          onCustomMediaLoaded(dataUrl, 'video', `فيديو ميداني بالكاميرا: ${file.name || 'حقل القمح'}`);
         }
       } else {
         setCustomImageUrl(dataUrl);
         setCustomVideoUrl(null);
-        setIsUsingLiveCamera(false);
         if (onCustomMediaLoaded) {
-          onCustomMediaLoaded(dataUrl, 'image', `صورة ميدانية مرفوعة: ${file.name}`);
+          onCustomMediaLoaded(dataUrl, 'image', `صورة ميدانية بالكاميرا: ${file.name || 'نبات القمح'}`);
         }
       }
     };
@@ -195,7 +315,14 @@ export const DroneFPVCockpit: React.FC<DroneFPVCockpitProps> = ({
     setTimeout(() => setShowShutterFlash(false), 200);
 
     const frameUrl = getActiveFrameDataUrl();
-    onCapturePhoto(frameUrl);
+    const latinNow = formatLatinDateTime();
+    const label = isUsingLiveCamera
+      ? `لقطة حية من كاميرا الجهاز [${latinNow}]`
+      : customImageUrl
+      ? `صورة ميدانية ملتقطة [${latinNow}]`
+      : `لقطة فورية: ${activeSample.title}`;
+
+    onCapturePhoto(frameUrl, label);
   };
 
   const handleToggleRecord = () => {
@@ -208,7 +335,13 @@ export const DroneFPVCockpit: React.FC<DroneFPVCockpitProps> = ({
       const latinNow = formatLatinDateTime();
       setRecordedAtLatin(latinNow);
       setRecordedVideoClip(frameUrl);
-      onRecordVideo(frameUrl);
+      const label = isUsingLiveCamera
+        ? `مقطع مسح جوي حي من كاميرا الجهاز [${latinNow}]`
+        : customVideoUrl
+        ? `فيديو ميداني مسجل [${latinNow}]`
+        : `مقطع مسح جوي: ${activeSample.title}`;
+
+      onRecordVideo(frameUrl, label);
     }
   };
 
@@ -220,67 +353,141 @@ export const DroneFPVCockpit: React.FC<DroneFPVCockpitProps> = ({
 
   return (
     <div className="space-y-3">
-      {/* 3-Step Quick Testing Bar */}
-      <div className="bg-slate-900/90 border border-slate-800 rounded-xl px-4 py-2.5 flex flex-wrap items-center justify-between gap-3 text-xs">
+      {/* 3-Step Quick Testing Bar with Direct Camera & Upload Triggers */}
+      <div className="bg-slate-900/90 border border-slate-800 rounded-xl px-4 py-3 flex flex-wrap items-center justify-between gap-3 text-xs">
         <div className="flex items-center gap-2">
           <span className="w-2 h-2 rounded-full bg-amber-400 animate-ping" />
-          <strong className="text-amber-300">طريقة اختبار الصور أو الفيديو:</strong>
+          <strong className="text-amber-300">خيارات الكاميرا الميدانية:</strong>
           <span className="text-slate-300 hidden sm:inline">
-            1. اختر صنفاً أو ارفع ملفك &bull; 2. اضغط التقط صورة / سجل فيديو &bull; 3. اضغط "إرسال إلى WheatGuard"
+            بث حي &bull; التقاط صورة بالكاميرا &bull; تسجيل فيديو بالكاميرا &bull; رفع ملف
           </span>
         </div>
 
-        {/* Upload Custom Media & Live Camera buttons */}
-        <div className="flex items-center gap-2">
-          <input
-            type="file"
-            ref={fileInputRef}
-            onChange={handleUserFileUpload}
-            accept="image/*,video/*"
-            className="hidden"
-          />
+        {/* Hidden inputs for native camera capture & gallery files */}
+        <input
+          type="file"
+          ref={fileInputRef}
+          onChange={(e) => handleUserFileUpload(e.target.files?.[0])}
+          accept="image/*,video/*"
+          className="hidden"
+        />
+        <input
+          type="file"
+          ref={nativeCameraPhotoRef}
+          onChange={(e) => handleUserFileUpload(e.target.files?.[0], 'image')}
+          accept="image/*"
+          capture="environment"
+          className="hidden"
+        />
+        <input
+          type="file"
+          ref={nativeCameraVideoRef}
+          onChange={(e) => handleUserFileUpload(e.target.files?.[0], 'video')}
+          accept="video/*"
+          capture="environment"
+          className="hidden"
+        />
 
+        {/* Camera action buttons */}
+        <div className="flex flex-wrap items-center gap-2">
+          {/* 1. Live Camera Stream */}
+          <button
+            onClick={toggleLiveCamera}
+            disabled={isCameraStarting}
+            className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-semibold border transition-all ${
+              isUsingLiveCamera
+                ? 'bg-rose-600 hover:bg-rose-500 text-white border-rose-500 shadow-md shadow-rose-600/30'
+                : 'bg-sky-600 hover:bg-sky-500 text-white border-sky-500 shadow-md shadow-sky-600/20'
+            }`}
+            title="تشغيل بث كاميرا هاتفك مباشرة داخل قمرة الدرون"
+          >
+            <Smartphone className="w-3.5 h-3.5" />
+            <span>
+              {isCameraStarting
+                ? 'جاري تشغيل الكاميرا...'
+                : isUsingLiveCamera
+                ? 'إيقاف الكاميرا الحية'
+                : 'بث الكاميرا الحية'}
+            </span>
+          </button>
+
+          {/* Flip between Front and Rear Camera when live */}
+          {isUsingLiveCamera && (
+            <button
+              onClick={flipCameraFacing}
+              className="flex items-center gap-1 px-2.5 py-1.5 rounded-lg bg-slate-800 hover:bg-slate-700 text-slate-200 border border-slate-700 text-xs transition-colors"
+              title="تبديل الكاميرا الخلفية / الأمامية"
+            >
+              <RotateCcw className="w-3 h-3 text-sky-400" />
+              <span>{cameraFacing === 'environment' ? 'الخلفية' : 'الأمامية'}</span>
+            </button>
+          )}
+
+          {/* 2. Direct Smartphone Photo Capture */}
+          <button
+            onClick={() => nativeCameraPhotoRef.current?.click()}
+            className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-emerald-600 hover:bg-emerald-500 text-white border border-emerald-500 text-xs font-semibold shadow-md shadow-emerald-600/20 transition-colors"
+            title="فتح تطبيق كاميرا الهاتف مباشرة لالتقاط صورة عالية الدقة لنبات القمح في الحقل"
+          >
+            <Camera className="w-3.5 h-3.5" />
+            <span>التقاط صورة بالكاميرا</span>
+          </button>
+
+          {/* 3. Direct Smartphone Video Record */}
+          <button
+            onClick={() => nativeCameraVideoRef.current?.click()}
+            className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-rose-700 hover:bg-rose-600 text-white border border-rose-600 text-xs font-semibold shadow-md shadow-rose-700/20 transition-colors"
+            title="فتح تطبيق كاميرا الهاتف مباشرة لتسجيل فيديو لنبات القمح في الحقل"
+          >
+            <Video className="w-3.5 h-3.5" />
+            <span>تسجيل فيديو بالكاميرا</span>
+          </button>
+
+          {/* 4. Upload existing photo/video */}
           <button
             onClick={() => fileInputRef.current?.click()}
             className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-slate-800 hover:bg-slate-700 text-amber-300 border border-slate-700 text-xs font-semibold transition-colors"
-            title="رفع صورة أو فيديو قمح من جهازك لتجربته داخل الدرون"
+            title="رفع صورة أو فيديو قمح مخزن على جهازك لتجربته داخل الدرون"
           >
             <Upload className="w-3.5 h-3.5" />
-            <span>رفع صورة/فيديو من جهازي</span>
-          </button>
-
-          <button
-            onClick={toggleLiveCamera}
-            className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-semibold border transition-colors ${
-              isUsingLiveCamera
-                ? 'bg-rose-600 text-white border-rose-500'
-                : 'bg-slate-800 hover:bg-slate-700 text-sky-300 border-slate-700'
-            }`}
-            title="تشغيل كاميرا الهاتف المباشرة لتصوير نباتات القمح الحقيقية كدرون"
-          >
-            <Smartphone className="w-3.5 h-3.5" />
-            <span>{isUsingLiveCamera ? 'إيقاف الكاميرا الحية' : 'كاميرا هاتفي الحية'}</span>
+            <span>رفع ملف</span>
           </button>
         </div>
       </div>
+
+      {/* Camera Error / Permission Notice if blocked */}
+      {cameraError && (
+        <div className="p-3 bg-rose-950/80 border border-rose-500/50 rounded-xl flex items-start gap-3 text-xs text-rose-200 animate-fade-in">
+          <AlertCircle className="w-5 h-5 text-rose-400 shrink-0 mt-0.5" />
+          <div className="space-y-1">
+            <p className="font-bold text-rose-100">{cameraError}</p>
+            <p className="text-[11px] text-rose-300">
+              حل بديل فوري ومضمون: اضغط على زر <strong>"التقاط صورة بالكاميرا"</strong> أو <strong>"تسجيل فيديو بالكاميرا"</strong> أعلاه لفتح تطبيق الكاميرا بهاتفك مباشرة دون الحاجة لأذونات متصفح خاصة.
+            </p>
+          </div>
+        </div>
+      )}
 
       {/* Main FPV Drone Cockpit Screen */}
       <div className="relative w-full aspect-video sm:aspect-[16/10] bg-slate-950 rounded-2xl overflow-hidden border border-slate-800 shadow-2xl flex flex-col justify-between select-none">
         {/* Background Viewport: Live Camera OR Custom Video OR Custom Image OR Preset Sample */}
         <div className="absolute inset-0 overflow-hidden flex items-center justify-center bg-black">
-          {/* 1. Live Camera Stream */}
-          {isUsingLiveCamera && (
-            <video
-              ref={liveVideoRef}
-              autoPlay
-              playsInline
-              muted
-              className={`w-full h-full object-cover transition-transform duration-300 ${
-                ndviMode ? 'filter contrast-150 saturate-200 hue-rotate-90' : ''
-              }`}
-              style={{ transform: `scale(${zoomLevel})` }}
-            />
-          )}
+          {/* 1. Live Camera Stream - ALWAYS in DOM to guarantee ref presence & immediate playback */}
+          <video
+            ref={liveVideoRef}
+            autoPlay
+            playsInline
+            muted
+            onLoadedMetadata={() => {
+              if (liveVideoRef.current) {
+                liveVideoRef.current.play().catch(console.warn);
+              }
+            }}
+            className={`w-full h-full object-cover transition-transform duration-300 ${
+              !isUsingLiveCamera ? 'hidden' : ''
+            } ${ndviMode ? 'filter contrast-150 saturate-200 hue-rotate-90' : ''}`}
+            style={{ transform: `scale(${zoomLevel})` }}
+          />
 
           {/* 2. Custom Uploaded Video */}
           {!isUsingLiveCamera && customVideoUrl && (

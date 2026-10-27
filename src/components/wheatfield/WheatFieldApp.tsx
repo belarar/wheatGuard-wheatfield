@@ -330,11 +330,19 @@ export const WheatFieldApp: React.FC<WheatFieldAppProps> = ({
           <DroneFPVCockpit
             droneState={droneState}
             activeSample={activeSample}
-            onCapturePhoto={(dataUrl) =>
-              handleTransmit({ dataUrl, type: 'image', label: `لقطة فورية: ${activeSample.title}` })
+            onCapturePhoto={(dataUrl, label) =>
+              handleTransmit({
+                dataUrl,
+                type: 'image',
+                label: label || `لقطة فورية: ${activeSample.title}`,
+              })
             }
-            onRecordVideo={(dataUrl) =>
-              handleTransmit({ dataUrl, type: 'video', label: `مقطع مسح جوي: ${activeSample.title}` })
+            onRecordVideo={(dataUrl, label) =>
+              handleTransmit({
+                dataUrl,
+                type: 'video',
+                label: label || `مقطع مسح جوي: ${activeSample.title}`,
+              })
             }
             onTransmitToWheatGuard={() => handleTransmit()}
             isTransmitting={isTransmitting}
