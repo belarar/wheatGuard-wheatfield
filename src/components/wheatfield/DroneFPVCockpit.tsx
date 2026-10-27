@@ -66,6 +66,7 @@ export const DroneFPVCockpit: React.FC<DroneFPVCockpitProps> = ({
   const [cameraFacing, setCameraFacing] = useState<'environment' | 'user'>('environment');
   const [isCameraStarting, setIsCameraStarting] = useState<boolean>(false);
   const [cameraError, setCameraError] = useState<string | null>(null);
+  const [permissionState, setPermissionState] = useState<'granted' | 'denied' | 'prompt' | 'unknown'>('unknown');
   const [recordedVideoClip, setRecordedVideoClip] = useState<string | null>(null);
   const [isPlayingRecorded, setIsPlayingRecorded] = useState<boolean>(false);
 
@@ -79,6 +80,38 @@ export const DroneFPVCockpit: React.FC<DroneFPVCockpitProps> = ({
   // Video recording timer & live Latin OSD clock
   const [hudTimestamp, setHudTimestamp] = useState<string>(formatLatinDateTime());
   const [recordedAtLatin, setRecordedAtLatin] = useState<string | null>(null);
+
+  // Check Permissions API for camera access on mount and listen to status changes
+  useEffect(() => {
+    let permObj: PermissionStatus | null = null;
+    if (typeof navigator !== 'undefined' && navigator.permissions && navigator.permissions.query) {
+      navigator.permissions
+        .query({ name: 'camera' as any })
+        .then((perm) => {
+          permObj = perm;
+          setPermissionState(perm.state as any);
+          perm.onchange = () => {
+            setPermissionState(perm.state as any);
+            if (perm.state === 'granted') {
+              setCameraError(null);
+            } else if (perm.state === 'denied') {
+              setCameraError(
+                'تم رفض صلاحية الكاميرا من إعدادات المتصفح. يرجى الضغط على أيقونة القفل 🔒 في شريط عنوان المتصفح والسماح بالوصول للكاميرا (Camera: Allow).'
+              );
+            }
+          };
+        })
+        .catch(() => {
+          setPermissionState('unknown');
+        });
+    }
+
+    return () => {
+      if (permObj) {
+        permObj.onchange = null;
+      }
+    };
+  }, []);
 
   useEffect(() => {
     const clockInterval = setInterval(() => {
@@ -116,8 +149,8 @@ export const DroneFPVCockpit: React.FC<DroneFPVCockpitProps> = ({
     setIsCameraStarting(false);
   };
 
-  // Start live camera stream with robust multi-tier fallback for mobile devices
-  const startLiveCameraStream = async (facing: 'environment' | 'user' = cameraFacing) => {
+  // Start live camera stream with Permissions API check & robust multi-tier fallback for mobile devices
+  const startLiveCameraStream = async (facing: 'environment' | 'user' = cameraFacing): Promise<MediaStream | null> => {
     setCameraError(null);
     setIsCameraStarting(true);
 
@@ -131,12 +164,29 @@ export const DroneFPVCockpit: React.FC<DroneFPVCockpitProps> = ({
       mediaStreamRef.current = null;
     }
 
+    // 1. Explicit Permissions API verification
+    if (typeof navigator !== 'undefined' && navigator.permissions && navigator.permissions.query) {
+      try {
+        const perm = await navigator.permissions.query({ name: 'camera' as any });
+        setPermissionState(perm.state as any);
+        if (perm.state === 'denied') {
+          setIsCameraStarting(false);
+          setCameraError(
+            'تم حظر صلاحية الكاميرا من إعدادات المتصفح. يرجى الضغط على أيقونة القفل 🔒 في شريط عنوان المتصفح وتغيير إذن الكاميرا إلى "السماح (Allow)"، أو استخدام زر "التقاط صورة بالكاميرا" لفتح تطبيق الهاتف مباشرة.'
+          );
+          return null;
+        }
+      } catch (_) {
+        // Permissions query not supported on some engines, continue to getUserMedia
+      }
+    }
+
     if (typeof navigator === 'undefined' || !navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) {
       setIsCameraStarting(false);
       setCameraError(
-        'المتصفح أو بيئة الإطار الحالي لا تتيح تشغيل WebRTC المباشر. يمكنك استخدام أزرار "التقاط صورة بالكاميرا" أو "تسجيل فيديو بالكاميرا" بالأسفل لفتح تطبيق كاميرا هاتفك فوراً.'
+        'المتصفح أو بيئة الإطار الحالي لا تتيح تشغيل WebRTC المباشر (navigator.mediaDevices.getUserMedia غير متوفر). يمكنك استخدام زر "التقاط صورة بالكاميرا" بالأسفل لفتح تطبيق كاميرا هاتفك فوراً.'
       );
-      return;
+      return null;
     }
 
     let stream: MediaStream | null = null;
@@ -171,16 +221,23 @@ export const DroneFPVCockpit: React.FC<DroneFPVCockpitProps> = ({
           setIsCameraStarting(false);
           let errText = 'تعذر تشغيل كاميرا الجهاز.';
           if (e3.name === 'NotAllowedError' || e3.name === 'PermissionDeniedError') {
-            errText = 'تم رفض إذن الكاميرا من إعدادات المتصفح. يرجى تفعيل إذن الكاميرا أو استخدام زر "التقاط صورة بالكاميرا" لفتح تطبيق الهاتف.';
+            setPermissionState('denied');
+            errText =
+              'تم رفض صلاحية الكاميرا من قِبل المستخدم أو تم حظر الإذن في المتصفح. يرجى الضغط على أيقونة القفل 🔒 في شريط العنوان واختيار "سماح (Allow)" للوصول للكاميرا، أو اضغط زر "التقاط صورة بالكاميرا" لفتح تطبيق الهاتف مباشرة.';
           } else if (e3.name === 'NotFoundError' || e3.name === 'DevicesNotFoundError') {
-            errText = 'لم يتم العثور على كاميرا متصلة بالجهاز.';
+            errText = 'لم يتم العثور على أي كاميرا متصلة بالجهاز. يرجى التأكد من توفر الكاميرا أو رفع صورة من المعرض.';
           } else if (e3.name === 'NotReadableError' || e3.name === 'TrackStartError') {
-            errText = 'الكاميرا قيد الاستخدام حالياً بواسطة تطبيق آخر.';
+            errText =
+              'الكاميرا قيد الاستخدام حالياً بواسطة تطبيق آخر على جهازك (يرجى إغلاق التطبيقات الأخرى والمحاولة مجدداً).';
+          } else if (e3.name === 'OverconstrainedError') {
+            errText = 'إعدادات دقة الكاميرا المطلوبة غير مدعومة من هذا الهاتف.';
+          } else if (e3.name === 'SecurityError') {
+            errText = 'تم حظر الوصول إلى الكاميرا لأسباب أمنية (يتطلب بروتوكول HTTPS).';
           } else if (e3.message) {
             errText += ` (${e3.message})`;
           }
           setCameraError(errText);
-          return;
+          return null;
         }
       }
     }
@@ -191,6 +248,8 @@ export const DroneFPVCockpit: React.FC<DroneFPVCockpitProps> = ({
       setCustomImageUrl(null);
       setIsUsingLiveCamera(true);
       setIsCameraStarting(false);
+      setCameraError(null);
+      setPermissionState('granted');
 
       if (liveVideoRef.current) {
         const video = liveVideoRef.current;
@@ -203,7 +262,11 @@ export const DroneFPVCockpit: React.FC<DroneFPVCockpitProps> = ({
           console.warn('Video element play() caught:', playErr);
         });
       }
+      return stream;
     }
+
+    setIsCameraStarting(false);
+    return null;
   };
 
   // Toggle live camera on/off
@@ -310,7 +373,36 @@ export const DroneFPVCockpit: React.FC<DroneFPVCockpitProps> = ({
     return activeSample.imageUrl;
   };
 
-  const handleSnapPhoto = () => {
+  const handleSnapPhoto = async () => {
+    setCameraError(null);
+
+    // If live camera is not running and no custom user media is loaded:
+    // The user pressed the photo shutter to take a picture of the wheat crop with their device camera.
+    // Proactively verify permissions and request getUserMedia stream!
+    if (!isUsingLiveCamera || !mediaStreamRef.current) {
+      if (typeof navigator !== 'undefined' && navigator.permissions && navigator.permissions.query) {
+        try {
+          const perm = await navigator.permissions.query({ name: 'camera' as any });
+          setPermissionState(perm.state as any);
+          if (perm.state === 'denied') {
+            setCameraError(
+              'تم رفض صلاحية الكاميرا في إعدادات المتصفح. يرجى تفعيل إذن الكاميرا (Camera: Allow) من شريط العنوان 🔒 أو استخدم زر "التقاط صورة بالكاميرا" بالأسفل لفتح تطبيق كاميرا هاتفك مباشرة.'
+            );
+            return;
+          }
+        } catch (_) {}
+      }
+
+      // Request camera permissions and start stream
+      const stream = await startLiveCameraStream();
+      if (!stream) {
+        // Stream failed or was denied; cameraError state already contains detailed guidance for the user
+        return;
+      }
+      // Give camera auto-focus & exposure a moment to settle
+      await new Promise((resolve) => setTimeout(resolve, 350));
+    }
+
     setShowShutterFlash(true);
     setTimeout(() => setShowShutterFlash(false), 200);
 
@@ -325,8 +417,31 @@ export const DroneFPVCockpit: React.FC<DroneFPVCockpitProps> = ({
     onCapturePhoto(frameUrl, label);
   };
 
-  const handleToggleRecord = () => {
+  const handleToggleRecord = async () => {
     if (!isRecording) {
+      setCameraError(null);
+      // If live camera is not running and no custom user media is loaded, activate camera for recording
+      if (!isUsingLiveCamera || !mediaStreamRef.current) {
+        if (typeof navigator !== 'undefined' && navigator.permissions && navigator.permissions.query) {
+          try {
+            const perm = await navigator.permissions.query({ name: 'camera' as any });
+            setPermissionState(perm.state as any);
+            if (perm.state === 'denied') {
+              setCameraError(
+                'تم رفض صلاحية الكاميرا في إعدادات المتصفح. يرجى تفعيل إذن الكاميرا (Camera: Allow) من شريط العنوان 🔒 لتسجيل الفيديو.'
+              );
+              return;
+            }
+          } catch (_) {}
+        }
+
+        const stream = await startLiveCameraStream();
+        if (!stream) {
+          return;
+        }
+        await new Promise((resolve) => setTimeout(resolve, 350));
+      }
+
       setIsRecording(true);
       setRecordedVideoClip(null);
     } else {
@@ -455,15 +570,52 @@ export const DroneFPVCockpit: React.FC<DroneFPVCockpitProps> = ({
         </div>
       </div>
 
-      {/* Camera Error / Permission Notice if blocked */}
+      {/* Camera Error / Permission Notice with clear user actions and diagnostics */}
       {cameraError && (
-        <div className="p-3 bg-rose-950/80 border border-rose-500/50 rounded-xl flex items-start gap-3 text-xs text-rose-200 animate-fade-in">
-          <AlertCircle className="w-5 h-5 text-rose-400 shrink-0 mt-0.5" />
-          <div className="space-y-1">
-            <p className="font-bold text-rose-100">{cameraError}</p>
-            <p className="text-[11px] text-rose-300">
-              حل بديل فوري ومضمون: اضغط على زر <strong>"التقاط صورة بالكاميرا"</strong> أو <strong>"تسجيل فيديو بالكاميرا"</strong> أعلاه لفتح تطبيق الكاميرا بهاتفك مباشرة دون الحاجة لأذونات متصفح خاصة.
-            </p>
+        <div className="p-3.5 bg-rose-950/90 border-2 border-rose-500/80 rounded-xl flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3 text-xs text-rose-200 shadow-xl animate-fade-in">
+          <div className="flex items-start gap-2.5">
+            <AlertCircle className="w-5 h-5 text-rose-400 shrink-0 mt-0.5" />
+            <div className="space-y-1">
+              <div className="flex items-center gap-2">
+                <span className="font-bold text-rose-100 text-sm">تنبيه صلاحيات الكاميرا</span>
+                {permissionState !== 'unknown' && (
+                  <span
+                    className={`text-[10px] px-2 py-0.5 rounded font-mono font-bold ${
+                      permissionState === 'denied'
+                        ? 'bg-rose-900 text-rose-200 border border-rose-600'
+                        : permissionState === 'granted'
+                        ? 'bg-emerald-900 text-emerald-200 border border-emerald-600'
+                        : 'bg-amber-900 text-amber-200 border border-amber-600'
+                    }`}
+                  >
+                    حالة الإذن: {permissionState === 'denied' ? 'مرفوض 🔒' : permissionState === 'granted' ? 'مقبول ✅' : 'قيد الطلب ⏳'}
+                  </span>
+                )}
+              </div>
+              <p className="text-rose-200 leading-relaxed font-medium">{cameraError}</p>
+            </div>
+          </div>
+
+          <div className="flex flex-wrap items-center gap-2 w-full sm:w-auto shrink-0 justify-end pt-2 sm:pt-0 border-t sm:border-t-0 border-rose-800/60">
+            <button
+              onClick={() => startLiveCameraStream()}
+              className="px-3 py-1.5 rounded-lg bg-rose-700 hover:bg-rose-600 text-white font-bold text-xs shadow-md transition-all active:scale-95"
+            >
+              إعادة طلب الصلاحية
+            </button>
+            <button
+              onClick={() => nativeCameraPhotoRef.current?.click()}
+              className="px-3 py-1.5 rounded-lg bg-emerald-600 hover:bg-emerald-500 text-white font-bold text-xs shadow-md transition-all active:scale-95 flex items-center gap-1"
+            >
+              <Camera className="w-3.5 h-3.5" />
+              <span>كاميرا الهاتف البديلة</span>
+            </button>
+            <button
+              onClick={() => setCameraError(null)}
+              className="px-2.5 py-1.5 rounded-lg bg-slate-800 hover:bg-slate-700 text-slate-300 text-xs transition-colors"
+            >
+              إغلاق
+            </button>
           </div>
         </div>
       )}
