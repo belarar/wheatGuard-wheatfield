@@ -583,6 +583,28 @@ export const WheatGuardApp: React.FC<WheatGuardAppProps> = ({
               </div>
             </div>
 
+            {/* Prominent Video Reception Banner when active media is video */}
+            {activeMediaType === 'video' && (
+              <div className="mb-3.5 p-3 rounded-xl bg-gradient-to-r from-emerald-950/90 via-slate-900 to-slate-950 border border-emerald-500/50 flex flex-wrap items-center justify-between gap-3 text-xs shadow-lg animate-fade-in">
+                <div className="flex items-center gap-2.5">
+                  <span className="w-2.5 h-2.5 rounded-full bg-emerald-400 animate-ping" />
+                  <div>
+                    <span className="font-bold text-emerald-300">تم استقبال مقطع الفيديو من الكاميرا بنجاح! 🎬</span>
+                    <span className="text-slate-400 font-mono text-[11px] block mt-0.5">
+                      المصدر: {sourceLabel} &bull; التشغيل والتحليل التلقائي بنموذج TFLite نشط الآن
+                    </span>
+                  </div>
+                </div>
+                <button
+                  onClick={onSwitchToDrone}
+                  className="px-3 py-1.5 rounded-lg bg-emerald-600/30 hover:bg-emerald-600/50 text-emerald-200 border border-emerald-500/40 text-xs font-semibold flex items-center gap-1.5 transition-colors"
+                >
+                  <span>العودة لقمرة الدرون</span>
+                  <span className="font-mono">&larr;</span>
+                </button>
+              </div>
+            )}
+
             {/* Image/Video Preview Container */}
             <div className="relative aspect-video w-full bg-slate-950 rounded-xl overflow-hidden border border-slate-800 flex items-center justify-center shadow-inner">
               {(() => {

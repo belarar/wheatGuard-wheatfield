@@ -111,15 +111,70 @@ export default function App() {
   // Transmission notification toast
   const [toastMessage, setToastMessage] = useState<string | null>(null);
 
+  // Real-time synchronization with server telemetry history for multi-device testing (Phone -> PC)
+  useEffect(() => {
+    let isMounted = true;
+    const syncFromServer = async () => {
+      try {
+        const res = await fetch('/api/telemetry/history');
+        if (!res.ok) return;
+        const data = await res.json();
+        if (data && Array.isArray(data.history) && data.history.length > 0 && isMounted) {
+          setIncomingPackets((prev) => {
+            const existingIds = new Set(prev.map((p) => p.id));
+            const newItems = data.history.filter((item: TelemetryPacket) => !existingIds.has(item.id));
+            if (newItems.length > 0) {
+              return [...newItems, ...prev];
+            }
+            return prev;
+          });
+        }
+      } catch (_) {}
+    };
+
+    syncFromServer();
+    const timer = setInterval(syncFromServer, 2500);
+
+    // Cross-tab synchronization via storage event
+    const handleStorage = (e: StorageEvent) => {
+      if (e.key === 'wheatguard_latest_packet' && e.newValue) {
+        try {
+          const pkt = JSON.parse(e.newValue);
+          if (pkt && pkt.id) {
+            setIncomingPackets((prev) => [pkt, ...prev.filter((p) => p.id !== pkt.id)]);
+          }
+        } catch (_) {}
+      }
+    };
+    window.addEventListener('storage', handleStorage);
+
+    return () => {
+      isMounted = false;
+      clearInterval(timer);
+      window.removeEventListener('storage', handleStorage);
+    };
+  }, []);
+
   const handleTransmitPacket = (packet: TelemetryPacket) => {
-    setIncomingPackets((prev) => [packet, ...prev]);
+    setIncomingPackets((prev) => [packet, ...prev.filter((p) => p.id !== packet.id)]);
 
     const timeLabel = packet.formattedTimestampLatin || formatLatinDateTime(packet.timestamp);
     const mediaTypeLabel = packet.capturedMedia?.type === 'video' ? 'مقطع فيديو جوي' : 'لقطة درون';
-    setToastMessage(`تم إرسال ${mediaTypeLabel} (${packet.droneId}) [${timeLabel}] وبيانات المستشعرات بنجاح إلى WheatGuard!`);
+    setToastMessage(`تم إرسال ${mediaTypeLabel} (${packet.droneId}) [${timeLabel}] إلى WheatGuard بنجاح! الانتقال للعرض الآن...`);
+
+    // Broadcast across tabs
+    try {
+      if (typeof window !== 'undefined' && window.localStorage) {
+        window.localStorage.setItem('wheatguard_latest_packet', JSON.stringify(packet));
+      }
+    } catch (_) {}
+
+    // Automatically switch view to WheatGuard so the user immediately sees the video playing and being analyzed!
+    setAppMode('WHEAT_GUARD');
+
     setTimeout(() => {
       setToastMessage(null);
-    }, 4500);
+    }, 5000);
   };
 
   return (

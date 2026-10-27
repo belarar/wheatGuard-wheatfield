@@ -520,6 +520,20 @@ export const DroneFPVCockpit: React.FC<DroneFPVCockpitProps> = ({
     }
   };
 
+  const getSafeMimeType = (): string => {
+    if (typeof MediaRecorder === 'undefined' || !MediaRecorder.isTypeSupported) return '';
+    const types = [
+      'video/webm;codecs=vp8',
+      'video/webm',
+      'video/webm;codecs=vp9',
+      'video/mp4',
+    ];
+    for (const t of types) {
+      if (MediaRecorder.isTypeSupported(t)) return t;
+    }
+    return '';
+  };
+
   // One-touch 3-second live camera recording and instant video transmission to WheatGuard
   const handleOneTouchVideoSend = async (seconds: number = 3) => {
     if (isAutoRecordingForSend || isTransmitting) return;
@@ -532,8 +546,15 @@ export const DroneFPVCockpit: React.FC<DroneFPVCockpitProps> = ({
     }
 
     if (typeof MediaRecorder === 'undefined' || !activeStream) {
-      // Fallback: transmit current frame snapshot
-      handleSend();
+      const frameUrl = getActiveFrameDataUrl();
+      const latinNow = formatLatinDateTime();
+      onTransmitToWheatGuard({
+        dataUrl: frameUrl,
+        type: 'image',
+        label: `لقطة حية بالكاميرا [${latinNow}]`,
+      });
+      setTransmissionSuccess(true);
+      setTimeout(() => setTransmissionSuccess(false), 3500);
       return;
     }
 
@@ -541,18 +562,15 @@ export const DroneFPVCockpit: React.FC<DroneFPVCockpitProps> = ({
       setIsAutoRecordingForSend(true);
       setAutoRecordCountdown(seconds);
       const autoChunks: Blob[] = [];
+      const safeMime = getSafeMimeType();
 
-      const preferredMime = MediaRecorder.isTypeSupported('video/mp4')
-        ? 'video/mp4'
-        : MediaRecorder.isTypeSupported('video/webm;codecs=vp9')
-        ? 'video/webm;codecs=vp9'
-        : MediaRecorder.isTypeSupported('video/webm;codecs=vp8')
-        ? 'video/webm;codecs=vp8'
-        : MediaRecorder.isTypeSupported('video/webm')
-        ? 'video/webm'
-        : '';
-
-      const mr = preferredMime ? new MediaRecorder(activeStream, { mimeType: preferredMime }) : new MediaRecorder(activeStream);
+      let mr: MediaRecorder;
+      try {
+        mr = safeMime ? new MediaRecorder(activeStream, { mimeType: safeMime }) : new MediaRecorder(activeStream);
+      } catch (errM) {
+        console.warn('MediaRecorder with mime failed, trying default MediaRecorder:', errM);
+        mr = new MediaRecorder(activeStream);
+      }
 
       mr.ondataavailable = (e) => {
         if (e.data && e.data.size > 0) {
@@ -560,37 +578,60 @@ export const DroneFPVCockpit: React.FC<DroneFPVCockpitProps> = ({
         }
       };
 
-      mr.onstop = () => {
-        const blob = new Blob(autoChunks, { type: mr.mimeType || 'video/webm' });
-        const reader = new FileReader();
-        reader.onloadend = () => {
-          const videoDataUrl = reader.result as string;
-          const latinNow = formatLatinDateTime();
-          setRecordedVideoClip(videoDataUrl);
-          setRecordedAtLatin(latinNow);
+      const finalizeAndSend = () => {
+        const finalBlob = new Blob(autoChunks, { type: mr.mimeType || safeMime || 'video/webm' });
+        console.log('Recorded video final blob size:', finalBlob.size);
+
+        if (finalBlob.size > 200) {
+          const reader = new FileReader();
+          reader.onloadend = () => {
+            const videoDataUrl = reader.result as string;
+            const latinNow = formatLatinDateTime();
+            setRecordedVideoClip(videoDataUrl);
+            setRecordedAtLatin(latinNow);
+            setIsAutoRecordingForSend(false);
+            // Transmit real video directly to WheatGuard
+            onTransmitToWheatGuard({
+              dataUrl: videoDataUrl,
+              type: 'video',
+              label: `مقطع مسح جوي حي مسجل من كاميرا الهاتف [${latinNow}]`,
+            });
+            setTransmissionSuccess(true);
+            setTimeout(() => setTransmissionSuccess(false), 3500);
+          };
+          reader.readAsDataURL(finalBlob);
+        } else {
+          // If blob was empty (e.g. Android hardware encoding glitch), fallback to high-quality active frame snapshot
+          console.warn('Recorded blob was empty, falling back to frame snapshot');
           setIsAutoRecordingForSend(false);
-          // Transmit video directly to WheatGuard
+          const frameUrl = getActiveFrameDataUrl();
+          const latinNow = formatLatinDateTime();
           onTransmitToWheatGuard({
-            dataUrl: videoDataUrl,
-            type: 'video',
-            label: `مقطع فيديو حي مسجل من كاميرا الهاتف [${latinNow}]`,
+            dataUrl: frameUrl,
+            type: 'image',
+            label: `لقطة حية بالكاميرا [${latinNow}]`,
           });
           setTransmissionSuccess(true);
           setTimeout(() => setTransmissionSuccess(false), 3500);
-        };
-        reader.readAsDataURL(blob);
+        }
       };
 
-      mr.start(250);
+      mr.onstop = () => {
+        finalizeAndSend();
+      };
 
-      // Countdown timer
+      mr.start(200);
+
       let remaining = seconds;
       const timer = setInterval(() => {
         remaining -= 1;
         setAutoRecordCountdown(remaining);
         if (remaining <= 0) {
           clearInterval(timer);
-          if (mr.state !== 'inactive') {
+          if (mr.state === 'recording') {
+            try {
+              mr.requestData();
+            } catch (_) {}
             try {
               mr.stop();
             } catch (_) {}
@@ -678,16 +719,9 @@ export const DroneFPVCockpit: React.FC<DroneFPVCockpitProps> = ({
       return;
     }
 
-    // 6. If currently streaming live camera, capture the active camera frame right now and send
-    if (isUsingLiveCamera && liveVideoRef.current) {
-      const frameUrl = getActiveFrameDataUrl();
-      onTransmitToWheatGuard({
-        dataUrl: frameUrl,
-        type: 'image',
-        label: `لقطة حية من كاميرا الجهاز [${latinNow}]`,
-      });
-      setTransmissionSuccess(true);
-      setTimeout(() => setTransmissionSuccess(false), 3500);
+    // 6. If currently streaming live camera and no clip is recorded, automatically record a 3-second live video clip and send it directly!
+    if (isUsingLiveCamera) {
+      handleOneTouchVideoSend(3);
       return;
     }
 
@@ -1056,19 +1090,32 @@ export const DroneFPVCockpit: React.FC<DroneFPVCockpitProps> = ({
         <div className="flex flex-col sm:flex-row items-stretch sm:items-center gap-2.5">
           {/* Main Hero Send Button */}
           <button
-            onClick={() => handleSend()}
+            onClick={() => {
+              if (recordedVideoClip) {
+                handleSend();
+              } else if (isUsingLiveCamera) {
+                handleOneTouchVideoSend(3);
+              } else {
+                handleSend();
+              }
+            }}
             disabled={isTransmitting || isAutoRecordingForSend}
             className={`w-full sm:flex-1 py-3 px-4 rounded-xl font-black text-sm shadow-xl flex items-center justify-center gap-2.5 transition-all active:scale-[0.98] disabled:opacity-50 ${
               transmissionSuccess
                 ? 'bg-emerald-600 text-white shadow-emerald-600/30'
                 : 'bg-gradient-to-r from-emerald-500 via-teal-500 to-emerald-600 hover:from-emerald-400 hover:to-teal-400 text-slate-950 shadow-emerald-500/25 ring-2 ring-emerald-400/40'
             }`}
-            title="إرسال اللقطة الحالية أو مقطع الفيديو مباشرة إلى WheatGuard"
+            title="إرسال مقطع الفيديو أو اللقطة مباشرة إلى WheatGuard"
           >
             {isTransmitting ? (
               <>
                 <Radio className="w-5 h-5 animate-spin text-slate-950" />
                 <span>جاري النقل والتحليل في WheatGuard...</span>
+              </>
+            ) : isAutoRecordingForSend ? (
+              <>
+                <Video className="w-5 h-5 text-slate-950 animate-pulse" />
+                <span>جاري تسجيل وإرسال فيديو ({autoRecordCountdown}s)...</span>
               </>
             ) : transmissionSuccess ? (
               <>
@@ -1080,29 +1127,35 @@ export const DroneFPVCockpit: React.FC<DroneFPVCockpitProps> = ({
                 <Send className="w-5 h-5 text-slate-950" />
                 <span>
                   {recordedVideoClip
-                    ? 'إرسال مقطع الفيديو المسجل إلى WheatGuard'
+                    ? 'إرسال مقطع الفيديو المسجل إلى WheatGuard 🚀'
                     : isUsingLiveCamera
-                    ? 'إرسال لقطة الكاميرا الحية إلى WheatGuard'
-                    : 'إرسال إلى WheatGuard'}
+                    ? 'تسجيل فيديو 3ث وإرسال فوري لـ WheatGuard 🎥'
+                    : 'إرسال العينة والبيانات إلى WheatGuard 📡'}
                 </span>
               </>
             )}
           </button>
 
-          {/* One-Tap 3-Second Live Camera Video Record & Direct Send */}
+          {/* Direct Still Photo Send Button for Live Camera */}
           {isUsingLiveCamera && (
             <button
-              onClick={() => handleOneTouchVideoSend(3)}
+              onClick={() => {
+                const frameUrl = getActiveFrameDataUrl();
+                const latinNow = formatLatinDateTime();
+                onTransmitToWheatGuard({
+                  dataUrl: frameUrl,
+                  type: 'image',
+                  label: `صورة فوتوغرافية حية بالكاميرا [${latinNow}]`,
+                });
+                setTransmissionSuccess(true);
+                setTimeout(() => setTransmissionSuccess(false), 3500);
+              }}
               disabled={isTransmitting || isRecording || isAutoRecordingForSend}
-              className="w-full sm:w-auto py-3 px-4 rounded-xl bg-gradient-to-r from-rose-600 via-amber-600 to-rose-700 hover:from-rose-500 hover:to-amber-500 text-white font-black text-xs shadow-lg flex items-center justify-center gap-2 transition-all active:scale-[0.98] disabled:opacity-50 ring-1 ring-rose-400/30"
-              title="تسجيل فيديو مدته 3 ثوانٍ من الكاميرا وإرساله تلقائياً إلى WheatGuard بنقرة واحدة"
+              className="w-full sm:w-auto py-3 px-4 rounded-xl bg-slate-800 hover:bg-slate-700 text-slate-200 font-bold text-xs shadow-md border border-slate-700 flex items-center justify-center gap-2 transition-all active:scale-[0.98] disabled:opacity-50"
+              title="إرسال لقطة صورة فوتوغرافية ثابتة فقط بدلاً من فيديو"
             >
-              <Video className="w-4 h-4 text-white animate-pulse" />
-              <span>
-                {isAutoRecordingForSend
-                  ? `تسجيل فيديو وإرسال (${autoRecordCountdown}s)...`
-                  : 'تسجيل فيديو 3ث وإرسال فوري'}
-              </span>
+              <Camera className="w-4 h-4 text-emerald-400" />
+              <span>إرسال صورة ثابتة فقط</span>
             </button>
           )}
         </div>
