@@ -319,13 +319,60 @@ export const DroneFPVCockpit: React.FC<DroneFPVCockpitProps> = ({
     };
   }, []);
 
+  const [pingStatus, setPingStatus] = useState<string | null>(null);
+
+  const testServerPing = async () => {
+    setPingStatus('جاري الفحص...');
+    try {
+      const res = await fetch('/api/telemetry/ping', {
+        credentials: 'include',
+        headers: { 'Cache-Control': 'no-cache, no-store' },
+      });
+      if (res.ok) {
+        setPingStatus('200 OK ✅');
+        setTimeout(() => setPingStatus(null), 3000);
+      } else {
+        setPingStatus(`خطأ ${res.status} ⚠️`);
+        setTimeout(() => setPingStatus(null), 4000);
+      }
+    } catch (_) {
+      setPingStatus('غير متصل ❌');
+      setTimeout(() => setPingStatus(null), 4000);
+    }
+  };
+
   // Handle uploading or capturing user custom image or video
   const handleUserFileUpload = (file?: File, forcedType?: 'image' | 'video') => {
     if (!file) return;
 
     const isVideo = forcedType === 'video' || file.type.startsWith('video/');
-    const reader = new FileReader();
 
+    // Safety guard against 30MB+ uncompressed native smartphone camera videos
+    if (isVideo && file.size > 3.5 * 1024 * 1024) {
+      const video = document.createElement('video');
+      video.src = URL.createObjectURL(file);
+      video.muted = true;
+      video.playsInline = true;
+      video.onloadeddata = () => {
+        video.currentTime = Math.min(1.0, (video.duration || 2) / 2);
+        video.onseeked = () => {
+          const { dataUrl } = extract640FrameFromElement(video, {
+            enabled: true,
+            autoWhiteBalance: true,
+            contrastStretching: true,
+          });
+          stopLiveCameraStream();
+          setCustomVideoUrl(dataUrl);
+          setCustomImageUrl(null);
+          if (onCustomMediaLoaded) {
+            onCustomMediaLoaded(dataUrl, 'video', `فيديو قمح مضغوط ومحسن: ${file.name || 'حقل القمح'}`);
+          }
+        };
+      };
+      return;
+    }
+
+    const reader = new FileReader();
     reader.onload = (event) => {
       const dataUrl = event.target?.result as string;
       stopLiveCameraStream();
@@ -1288,10 +1335,16 @@ export const DroneFPVCockpit: React.FC<DroneFPVCockpitProps> = ({
 
       {/* Mobile Sticky Quick Action Bar (Visible only on mobile screens so user never misses the Send button!) */}
       <div className="sm:hidden fixed bottom-3 left-3 right-3 z-50 bg-slate-900/95 border-2 border-emerald-500/60 backdrop-blur-md rounded-2xl p-2.5 shadow-2xl flex items-center justify-between gap-2 animate-fade-in">
-        <div className="flex items-center gap-1.5 shrink-0 px-2 py-1 bg-slate-950/80 rounded-lg border border-slate-800">
+        <button
+          onClick={testServerPing}
+          className="flex items-center gap-1.5 shrink-0 px-2.5 py-1.5 bg-slate-950/80 hover:bg-slate-800 rounded-lg border border-slate-800 transition-colors"
+          title="انقر لفحص الاتصال المباشر بالسيرفر"
+        >
           <span className="w-2 h-2 rounded-full bg-emerald-400 animate-ping" />
-          <span className="text-[10px] font-bold text-emerald-300">متصل 🟢</span>
-        </div>
+          <span className="text-[10px] font-bold text-emerald-300 font-mono">
+            {pingStatus || 'سيرفر 🟢'}
+          </span>
+        </button>
         <button
           onClick={() => {
             if (recordedVideoClip) {

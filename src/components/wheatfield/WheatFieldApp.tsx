@@ -207,6 +207,7 @@ export const WheatFieldApp: React.FC<WheatFieldAppProps> = ({
     try {
       const response = await fetch('/api/telemetry/push', {
         method: 'POST',
+        credentials: 'include',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(packet),
       });

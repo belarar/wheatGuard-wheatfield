@@ -118,6 +118,7 @@ export default function App() {
     const syncFromServer = async () => {
       try {
         const res = await fetch('/api/telemetry/history', {
+          credentials: 'include',
           headers: { 'Cache-Control': 'no-cache, no-store' },
         });
         if (!res.ok) return;
@@ -134,7 +135,7 @@ export default function App() {
                 Boolean(latestNew.capturedMedia?.label?.includes('فيديو'));
               const typeLabel = isVid ? 'مقطع فيديو جوي' : 'لقطة عينة';
               const timeLabel = latestNew.formattedTimestampLatin || formatLatinDateTime(latestNew.timestamp);
-              setToastMessage(`📥 تم استلام ${typeLabel} جديد من الهاتف الميداني (${latestNew.droneId}) [${timeLabel}]! جاري التحليل التلقائي...`);
+              setToastMessage(`📥 تم استلام ${typeLabel} جديد من الهاتف الميداني (${latestNew.droneId}) [${timeLabel}]! يتم التحليل والعرض فوراً.`);
               setTimeout(() => setToastMessage(null), 6000);
               return [...newItems, ...prev];
             }
@@ -145,7 +146,7 @@ export default function App() {
     };
 
     syncFromServer();
-    const timer = setInterval(syncFromServer, 1200);
+    const timer = setInterval(syncFromServer, 1000);
 
     // Cross-tab synchronization via storage event
     const handleStorage = (e: StorageEvent) => {
@@ -171,6 +172,7 @@ export default function App() {
     setIsRefreshingServer(true);
     try {
       const res = await fetch('/api/telemetry/history', {
+        credentials: 'include',
         headers: { 'Cache-Control': 'no-cache, no-store' },
       });
       if (!res.ok) throw new Error('HTTP ' + res.status);
@@ -184,7 +186,7 @@ export default function App() {
           }
           return prev;
         });
-        setToastMessage(`🔄 تم فحص الخادم السحابي: تم مزامنة ${data.history.length} حزمة بنجاح.`);
+        setToastMessage(`🔄 تم فحص الخادم السحابي: متزامن مع ${data.history.length} حزمة بنجاح.`);
         setTimeout(() => setToastMessage(null), 3000);
       }
     } catch (err: any) {
@@ -195,12 +197,12 @@ export default function App() {
     }
   };
 
-  const handleTransmitPacket = (packet: TelemetryPacket) => {
+  const handleTransmitPacket = async (packet: TelemetryPacket) => {
     setIncomingPackets((prev) => [packet, ...prev.filter((p) => p.id !== packet.id)]);
 
     const timeLabel = packet.formattedTimestampLatin || formatLatinDateTime(packet.timestamp);
     const mediaTypeLabel = packet.capturedMedia?.type === 'video' ? 'مقطع فيديو جوي' : 'لقطة درون';
-    setToastMessage(`تم إرسال ${mediaTypeLabel} (${packet.droneId}) [${timeLabel}] إلى WheatGuard بنجاح! الانتقال للعرض الآن...`);
+    setToastMessage(`تم إرسال ${mediaTypeLabel} (${packet.droneId}) [${timeLabel}] إلى السيرفر المركزي بنجاح!`);
 
     // Broadcast across tabs
     try {
@@ -209,8 +211,27 @@ export default function App() {
       }
     } catch (_) {}
 
-    // Automatically switch view to WheatGuard so the user immediately sees the video playing and being analyzed!
-    setAppMode('WHEAT_GUARD');
+    // Push to server API from persistent root level with credentials
+    try {
+      const response = await fetch('/api/telemetry/push', {
+        method: 'POST',
+        credentials: 'include',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(packet),
+      });
+      if (response.ok) {
+        console.log('[APP] Successfully pushed packet to server:', packet.id);
+        setToastMessage(`✅ تم تسليم ${mediaTypeLabel} للسيرفر! متزامن الآن مع شاشة الكمبيوتر.`);
+      }
+    } catch (pushErr) {
+      console.warn('[APP] Network push error:', pushErr);
+    }
+
+    // Only auto-switch mode on desktop when user is testing in single browser window
+    // Never kick mobile pilot out of the drone cockpit!
+    if (deviceView === 'DESKTOP' && typeof window !== 'undefined' && window.innerWidth >= 1024) {
+      setAppMode('WHEAT_GUARD');
+    }
 
     setTimeout(() => {
       setToastMessage(null);

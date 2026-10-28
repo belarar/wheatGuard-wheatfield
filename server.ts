@@ -17,11 +17,21 @@ const PORT = Number(process.env.PORT) || 3000;
 
 // Permissive CORS middleware for cross-device synchronization (Phone <-> PC)
 app.use((req, res, next) => {
-  res.header('Access-Control-Allow-Origin', '*');
+  const origin = req.headers.origin || '*';
+  res.header('Access-Control-Allow-Origin', origin);
+  res.header('Access-Control-Allow-Credentials', 'true');
   res.header('Access-Control-Allow-Methods', 'GET, POST, PUT, DELETE, OPTIONS');
-  res.header('Access-Control-Allow-Headers', 'Origin, X-Requested-With, Content-Type, Accept, Authorization');
+  res.header('Access-Control-Allow-Headers', 'Origin, X-Requested-With, Content-Type, Accept, Authorization, Cache-Control, Pragma');
   if (req.method === 'OPTIONS') {
     return res.sendStatus(200);
+  }
+  next();
+});
+
+// Request logger for cross-device telemetry debugging
+app.use((req, _res, next) => {
+  if (req.url.startsWith('/api/telemetry')) {
+    console.log(`[HTTP ${req.method}] ${req.url} (Origin: ${req.headers.origin || 'none'})`);
   }
   next();
 });
@@ -192,6 +202,22 @@ app.get('/api/telemetry/history', (_req: Request, res: Response) => {
   });
 });
 
+// Diagnostic Ping endpoint to verify instant phone-to-PC connection
+app.get('/api/telemetry/ping', (_req: Request, res: Response) => {
+  res.setHeader('Cache-Control', 'no-cache, no-store, must-revalidate');
+  const now = Date.now();
+  const d = new Date(now);
+  const latinTime = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')} ${String(d.getHours()).padStart(2, '0')}:${String(d.getMinutes()).padStart(2, '0')}:${String(d.getSeconds()).padStart(2, '0')}`;
+  res.json({
+    success: true,
+    status: 'ONLINE',
+    serverTime: now,
+    latinTime,
+    historyCount: missionHistory.length,
+    message: 'سيرفر المزامنة الميدانية متصل ويعمل بكفاءة عالية 🟢',
+  });
+});
+
 // API: Wheat Disease Diagnosis with Gemini Vision OR Custom Model Proxy
 app.post('/api/diagnose', async (req: Request, res: Response) => {
   try {
@@ -211,8 +237,8 @@ app.post('/api/diagnose', async (req: Request, res: Response) => {
       return res.status(400).json({ success: false, error: 'صورة عينة القمح مطلوبة للتشخيص' });
     }
 
-    // Clean any data URL header (image or video)
-    const cleanBase64 = imageBase64.replace(/^data:[a-zA-Z0-9\/\+\-\.]+;base64,/, '');
+    // Clean any data URL header (image or video with codecs like data:video/webm;codecs=vp8;base64,)
+    const cleanBase64 = imageBase64.replace(/^data:[^;]+(;[^;]+)*;base64,/, '');
     const detectedMime = imageBase64.startsWith('data:video/') ? 'video/mp4' : mimeType;
 
     // Check if user specified a custom external model URL
