@@ -118,7 +118,6 @@ export default function App() {
     const syncFromServer = async () => {
       try {
         const res = await fetch('/api/telemetry/history', {
-          credentials: 'include',
           headers: { 'Cache-Control': 'no-cache, no-store' },
         });
         if (!res.ok) return;
@@ -172,7 +171,6 @@ export default function App() {
     setIsRefreshingServer(true);
     try {
       const res = await fetch('/api/telemetry/history', {
-        credentials: 'include',
         headers: { 'Cache-Control': 'no-cache, no-store' },
       });
       if (!res.ok) throw new Error('HTTP ' + res.status);
@@ -186,10 +184,11 @@ export default function App() {
           }
           return prev;
         });
-        setToastMessage(`🔄 تم فحص الخادم السحابي: متزامن مع ${data.history.length} حزمة بنجاح.`);
+        setToastMessage(`🔄 تم فحص الخادم السحابي: متزامن مع ${data.history.length} حزمة بنجاح ✅`);
         setTimeout(() => setToastMessage(null), 3000);
       }
     } catch (err: any) {
+      console.warn('Sync error:', err);
       setToastMessage('تعذر جلب البيانات من الخادم، يرجى التحقق من اتصال الشبكة.');
       setTimeout(() => setToastMessage(null), 3500);
     } finally {
