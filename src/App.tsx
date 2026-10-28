@@ -110,20 +110,32 @@ export default function App() {
 
   // Transmission notification toast
   const [toastMessage, setToastMessage] = useState<string | null>(null);
+  const [isRefreshingServer, setIsRefreshingServer] = useState<boolean>(false);
 
-  // Real-time synchronization with server telemetry history for multi-device testing (Phone -> PC)
+  // Fast real-time synchronization with server telemetry history for multi-device testing (Phone -> PC)
   useEffect(() => {
     let isMounted = true;
     const syncFromServer = async () => {
       try {
-        const res = await fetch('/api/telemetry/history');
+        const res = await fetch('/api/telemetry/history', {
+          headers: { 'Cache-Control': 'no-cache, no-store' },
+        });
         if (!res.ok) return;
         const data = await res.json();
-        if (data && Array.isArray(data.history) && data.history.length > 0 && isMounted) {
+        if (data && Array.isArray(data.history) && isMounted) {
           setIncomingPackets((prev) => {
             const existingIds = new Set(prev.map((p) => p.id));
             const newItems = data.history.filter((item: TelemetryPacket) => !existingIds.has(item.id));
             if (newItems.length > 0) {
+              const latestNew = newItems[0];
+              const isVid =
+                latestNew.capturedMedia?.type === 'video' ||
+                latestNew.capturedMedia?.dataUrl?.startsWith('data:video/') ||
+                Boolean(latestNew.capturedMedia?.label?.includes('فيديو'));
+              const typeLabel = isVid ? 'مقطع فيديو جوي' : 'لقطة عينة';
+              const timeLabel = latestNew.formattedTimestampLatin || formatLatinDateTime(latestNew.timestamp);
+              setToastMessage(`📥 تم استلام ${typeLabel} جديد من الهاتف الميداني (${latestNew.droneId}) [${timeLabel}]! جاري التحليل التلقائي...`);
+              setTimeout(() => setToastMessage(null), 6000);
               return [...newItems, ...prev];
             }
             return prev;
@@ -133,7 +145,7 @@ export default function App() {
     };
 
     syncFromServer();
-    const timer = setInterval(syncFromServer, 2500);
+    const timer = setInterval(syncFromServer, 1200);
 
     // Cross-tab synchronization via storage event
     const handleStorage = (e: StorageEvent) => {
@@ -154,6 +166,34 @@ export default function App() {
       window.removeEventListener('storage', handleStorage);
     };
   }, []);
+
+  const handleForceSyncServer = async () => {
+    setIsRefreshingServer(true);
+    try {
+      const res = await fetch('/api/telemetry/history', {
+        headers: { 'Cache-Control': 'no-cache, no-store' },
+      });
+      if (!res.ok) throw new Error('HTTP ' + res.status);
+      const data = await res.json();
+      if (data && Array.isArray(data.history)) {
+        setIncomingPackets((prev) => {
+          const existingIds = new Set(prev.map((p) => p.id));
+          const newItems = data.history.filter((item: TelemetryPacket) => !existingIds.has(item.id));
+          if (newItems.length > 0) {
+            return [...newItems, ...prev];
+          }
+          return prev;
+        });
+        setToastMessage(`🔄 تم فحص الخادم السحابي: تم مزامنة ${data.history.length} حزمة بنجاح.`);
+        setTimeout(() => setToastMessage(null), 3000);
+      }
+    } catch (err: any) {
+      setToastMessage('تعذر جلب البيانات من الخادم، يرجى التحقق من اتصال الشبكة.');
+      setTimeout(() => setToastMessage(null), 3500);
+    } finally {
+      setIsRefreshingServer(false);
+    }
+  };
 
   const handleTransmitPacket = (packet: TelemetryPacket) => {
     setIncomingPackets((prev) => [packet, ...prev.filter((p) => p.id !== packet.id)]);
@@ -232,6 +272,8 @@ export default function App() {
                 selectedParcelId={selectedParcelId}
                 onSelectParcel={setSelectedParcelId}
                 onSwitchToDrone={() => setAppMode('WHEAT_FIELD')}
+                onRefreshServer={handleForceSyncServer}
+                isRefreshingServer={isRefreshingServer}
               />
             )}
             {appMode === 'WHEAT_FIELD' && (
@@ -253,6 +295,8 @@ export default function App() {
                   selectedParcelId={selectedParcelId}
                   onSelectParcel={setSelectedParcelId}
                   onSwitchToDrone={() => setAppMode('WHEAT_FIELD')}
+                  onRefreshServer={handleForceSyncServer}
+                  isRefreshingServer={isRefreshingServer}
                 />
                 <hr className="border-slate-800" />
                 <WheatFieldApp
@@ -277,6 +321,8 @@ export default function App() {
                 selectedParcelId={selectedParcelId}
                 onSelectParcel={setSelectedParcelId}
                 onSwitchToDrone={() => setAppMode('WHEAT_FIELD')}
+                onRefreshServer={handleForceSyncServer}
+                isRefreshingServer={isRefreshingServer}
               />
             )}
 
@@ -342,6 +388,8 @@ export default function App() {
                       selectedParcelId={selectedParcelId}
                       onSelectParcel={setSelectedParcelId}
                       onSwitchToDrone={() => setAppMode('WHEAT_FIELD')}
+                      onRefreshServer={handleForceSyncServer}
+                      isRefreshingServer={isRefreshingServer}
                     />
                   </div>
                 </div>

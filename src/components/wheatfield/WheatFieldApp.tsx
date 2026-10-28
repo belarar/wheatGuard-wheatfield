@@ -23,6 +23,7 @@ import {
   MapPin,
   CheckCircle2,
   AlertTriangle,
+  AlertCircle,
   Radio,
   Sliders,
   Eye,
@@ -132,9 +133,19 @@ export const WheatFieldApp: React.FC<WheatFieldAppProps> = ({
     label: string;
   } | null>(null);
 
+  // Transmit feedback banner state
+  const [transmitFeedback, setTransmitFeedback] = useState<{
+    type: 'sending' | 'success' | 'error';
+    message: string;
+  } | null>(null);
+
   // Transmit current packet to WheatGuard
-  const handleTransmit = (overrideMedia?: { dataUrl: string; type: 'image' | 'video'; label?: string }) => {
+  const handleTransmit = async (overrideMedia?: { dataUrl: string; type: 'image' | 'video'; label?: string }) => {
     setIsTransmitting(true);
+    setTransmitFeedback({
+      type: 'sending',
+      message: 'جاري نقل المقطع والبيانات إلى الخادم المركزي (Cloud Sync)...',
+    });
 
     const now = Date.now();
     const latinDateTime = formatLatinDateTime(now);
@@ -189,20 +200,44 @@ export const WheatFieldApp: React.FC<WheatFieldAppProps> = ({
       diagnosis,
     };
 
-    // Forward to parent ecosystem handler
+    // Forward to parent ecosystem handler immediately
     onTransmitPacket(packet);
 
-    // Also push to server API in background
-    fetch('/api/telemetry/push', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify(packet),
-    }).catch(() => {});
+    // Push to server API with robust error handling and feedback
+    try {
+      const response = await fetch('/api/telemetry/push', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(packet),
+      });
 
-    setTimeout(() => {
+      if (response.ok) {
+        setLastSentTime(latinDateTime);
+        const typeStr = mediaToTransmit.type === 'video' ? 'مقطع الفيديو' : 'اللقطة';
+        setTransmitFeedback({
+          type: 'success',
+          message: `✅ تم تسليم ${typeStr} إلى الخادم بنجاح! متزامن الآن مع منصة الكمبيوتر (WheatGuard).`,
+        });
+        setTimeout(() => setTransmitFeedback(null), 6000);
+      } else {
+        const errorText = await response.text();
+        console.error('Server push failed with status:', response.status, errorText);
+        setTransmitFeedback({
+          type: 'error',
+          message: `تنبيه: تعذر استقبال السيرفر للحزمة (رمز ${response.status}). يرجى التأكد من استقرار الشبكة.`,
+        });
+        setTimeout(() => setTransmitFeedback(null), 8000);
+      }
+    } catch (networkErr: any) {
+      console.warn('Network error pushing to server:', networkErr);
+      setTransmitFeedback({
+        type: 'error',
+        message: 'خطأ في شبكة الاتصال بالسيرفر. يرجى التحقق من اتصال الهاتف بالإنترنت.',
+      });
+      setTimeout(() => setTransmitFeedback(null), 8000);
+    } finally {
       setIsTransmitting(false);
-      setLastSentTime(latinDateTime);
-    }, 600);
+    }
   };
 
   // Weather presets
@@ -326,6 +361,38 @@ export const WheatFieldApp: React.FC<WheatFieldAppProps> = ({
               </span>
             )}
           </div>
+
+          {/* Live Cloud Transmission Status Banner */}
+          {transmitFeedback && (
+            <div
+              className={`p-3.5 rounded-xl text-xs font-semibold flex items-center justify-between gap-2.5 shadow-lg animate-fade-in ${
+                transmitFeedback.type === 'sending'
+                  ? 'bg-sky-950/90 border border-sky-500/50 text-sky-200'
+                  : transmitFeedback.type === 'success'
+                  ? 'bg-emerald-950/90 border border-emerald-500/60 text-emerald-200'
+                  : 'bg-rose-950/90 border border-rose-500/60 text-rose-200'
+              }`}
+            >
+              <div className="flex items-center gap-2">
+                {transmitFeedback.type === 'sending' ? (
+                  <Radio className="w-4 h-4 animate-spin text-sky-400 shrink-0" />
+                ) : transmitFeedback.type === 'success' ? (
+                  <CheckCircle2 className="w-4 h-4 text-emerald-400 shrink-0" />
+                ) : (
+                  <AlertCircle className="w-4 h-4 text-rose-400 shrink-0" />
+                )}
+                <span>{transmitFeedback.message}</span>
+              </div>
+              {transmitFeedback.type === 'success' && (
+                <button
+                  onClick={onSwitchToWheatGuard}
+                  className="px-2.5 py-1 rounded-lg bg-emerald-700 hover:bg-emerald-600 text-white text-[11px] font-bold shadow shrink-0"
+                >
+                  معاينة في WheatGuard &rarr;
+                </button>
+              )}
+            </div>
+          )}
 
           <DroneFPVCockpit
             droneState={droneState}

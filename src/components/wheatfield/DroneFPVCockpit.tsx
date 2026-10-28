@@ -463,9 +463,14 @@ export const DroneFPVCockpit: React.FC<DroneFPVCockpitProps> = ({
             ? 'video/webm'
             : '';
 
-          const mr = preferredMime
-            ? new MediaRecorder(activeStream, { mimeType: preferredMime })
-            : new MediaRecorder(activeStream);
+          const mrOptions: MediaRecorderOptions = {
+            videoBitsPerSecond: 1000000, // 1 Mbps (~350KB for 3s, ~600KB for 5s)
+          };
+          if (preferredMime) {
+            mrOptions.mimeType = preferredMime;
+          }
+
+          const mr = new MediaRecorder(activeStream, mrOptions);
 
           mr.ondataavailable = (e) => {
             if (e.data && e.data.size > 0) {
@@ -566,7 +571,11 @@ export const DroneFPVCockpit: React.FC<DroneFPVCockpitProps> = ({
 
       let mr: MediaRecorder;
       try {
-        mr = safeMime ? new MediaRecorder(activeStream, { mimeType: safeMime }) : new MediaRecorder(activeStream);
+        const mrOptions: MediaRecorderOptions = {
+          videoBitsPerSecond: 1000000, // 1 Mbps for high quality and ultra-fast wireless push (< 500KB)
+        };
+        if (safeMime) mrOptions.mimeType = safeMime;
+        mr = new MediaRecorder(activeStream, mrOptions);
       } catch (errM) {
         console.warn('MediaRecorder with mime failed, trying default MediaRecorder:', errM);
         mr = new MediaRecorder(activeStream);
@@ -1276,6 +1285,60 @@ export const DroneFPVCockpit: React.FC<DroneFPVCockpitProps> = ({
           </button>
         </div>
       )}
+
+      {/* Mobile Sticky Quick Action Bar (Visible only on mobile screens so user never misses the Send button!) */}
+      <div className="sm:hidden fixed bottom-3 left-3 right-3 z-50 bg-slate-900/95 border-2 border-emerald-500/60 backdrop-blur-md rounded-2xl p-2.5 shadow-2xl flex items-center justify-between gap-2 animate-fade-in">
+        <div className="flex items-center gap-1.5 shrink-0 px-2 py-1 bg-slate-950/80 rounded-lg border border-slate-800">
+          <span className="w-2 h-2 rounded-full bg-emerald-400 animate-ping" />
+          <span className="text-[10px] font-bold text-emerald-300">متصل 🟢</span>
+        </div>
+        <button
+          onClick={() => {
+            if (recordedVideoClip) {
+              handleSend();
+            } else if (isUsingLiveCamera) {
+              handleOneTouchVideoSend(3);
+            } else {
+              handleSend();
+            }
+          }}
+          disabled={isTransmitting || isAutoRecordingForSend}
+          className={`flex-1 py-2.5 px-3 rounded-xl font-black text-xs shadow-lg flex items-center justify-center gap-1.5 active:scale-95 disabled:opacity-50 ${
+            transmissionSuccess
+              ? 'bg-emerald-600 text-white'
+              : 'bg-gradient-to-r from-emerald-500 via-teal-400 to-emerald-500 text-slate-950 shadow-emerald-500/25'
+          }`}
+          title="إرسال فوري إلى كمبيوتر WheatGuard"
+        >
+          {isTransmitting ? (
+            <>
+              <Radio className="w-3.5 h-3.5 animate-spin text-slate-950" />
+              <span>جاري الإرسال للكمبيوتر...</span>
+            </>
+          ) : isAutoRecordingForSend ? (
+            <>
+              <Video className="w-3.5 h-3.5 text-slate-950 animate-pulse" />
+              <span>تسجيل فيديو ({autoRecordCountdown}s)...</span>
+            </>
+          ) : transmissionSuccess ? (
+            <>
+              <CheckCircle2 className="w-3.5 h-3.5 text-white" />
+              <span>تم الإرسال للكمبيوتر! ✅</span>
+            </>
+          ) : (
+            <>
+              <Send className="w-3.5 h-3.5 text-slate-950" />
+              <span>
+                {recordedVideoClip
+                  ? 'إرسال الفيديو للكمبيوتر 🚀'
+                  : isUsingLiveCamera
+                  ? 'تسجيل فيديو 3ث وإرسال فوري 🎥'
+                  : 'إرسال العينة للكمبيوتر 📡'}
+              </span>
+            </>
+          )}
+        </button>
+      </div>
     </div>
   );
 };

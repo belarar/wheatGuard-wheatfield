@@ -1,17 +1,21 @@
 import { TelemetryPacket, CapturedSample } from '../../types';
-import { AlertCircle, CheckCircle2, Clock, MapPin, Plane, Radio, ArrowUpRight, Video } from 'lucide-react';
+import { AlertCircle, CheckCircle2, Clock, MapPin, Plane, Radio, ArrowUpRight, Video, RefreshCw } from 'lucide-react';
 import { formatLatinTime, formatLatinDate, formatLatinDateTime } from '../../utils/dateFormatter';
 
 interface DiseaseAlertsFeedProps {
   packets: TelemetryPacket[];
   onSelectPacket: (packet: TelemetryPacket) => void;
   selectedPacketId?: string;
+  onRefresh?: () => void;
+  isRefreshing?: boolean;
 }
 
 export const DiseaseAlertsFeed: React.FC<DiseaseAlertsFeedProps> = ({
   packets,
   onSelectPacket,
   selectedPacketId,
+  onRefresh,
+  isRefreshing,
 }) => {
   return (
     <div className="bg-slate-900 border border-slate-800 rounded-2xl p-4 flex flex-col h-full shadow-lg">
@@ -23,9 +27,22 @@ export const DiseaseAlertsFeed: React.FC<DiseaseAlertsFeedProps> = ({
           </span>
           <h3 className="text-sm font-bold text-slate-100">سجل إرساليات الدرون والتنبيهات المباشرة</h3>
         </div>
-        <span className="text-[11px] text-slate-400 font-mono">
-          {packets.length} عينة واردة
-        </span>
+        <div className="flex items-center gap-2">
+          {onRefresh && (
+            <button
+              onClick={onRefresh}
+              disabled={isRefreshing}
+              className="flex items-center gap-1 px-2 py-1 rounded-lg bg-slate-800 hover:bg-slate-700 text-emerald-400 border border-slate-700 text-[10px] font-semibold transition-colors active:scale-95 disabled:opacity-50"
+              title="جلب فوري لأحدث العينات من الخادم السحابي"
+            >
+              <RefreshCw className={`w-3 h-3 ${isRefreshing ? 'animate-spin' : ''}`} />
+              <span>تحديث الخادم</span>
+            </button>
+          )}
+          <span className="text-[11px] text-slate-400 font-mono">
+            {packets.length} عينة
+          </span>
+        </div>
       </div>
 
       {packets.length === 0 ? (

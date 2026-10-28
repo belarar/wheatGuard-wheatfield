@@ -7,16 +7,30 @@ import { fileURLToPath } from 'url';
 
 dotenv.config();
 
+import fs from 'fs';
+
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 
 const app = express();
 const PORT = Number(process.env.PORT) || 3000;
 
-app.use(express.json({ limit: '50mb' }));
-app.use(express.urlencoded({ extended: true, limit: '50mb' }));
+// Permissive CORS middleware for cross-device synchronization (Phone <-> PC)
+app.use((req, res, next) => {
+  res.header('Access-Control-Allow-Origin', '*');
+  res.header('Access-Control-Allow-Methods', 'GET, POST, PUT, DELETE, OPTIONS');
+  res.header('Access-Control-Allow-Headers', 'Origin, X-Requested-With, Content-Type, Accept, Authorization');
+  if (req.method === 'OPTIONS') {
+    return res.sendStatus(200);
+  }
+  next();
+});
 
-// Shared in-memory store for real-time field drone missions & alerts between WheatField and WheatGuard
+// Generous body limit for HD frames and video clips transmitted from mobile devices
+app.use(express.json({ limit: '100mb' }));
+app.use(express.urlencoded({ extended: true, limit: '100mb' }));
+
+// Shared store for real-time field drone missions & alerts between WheatField and WheatGuard
 interface TelemetryPacket {
   id: string;
   timestamp: number;
@@ -44,7 +58,44 @@ interface TelemetryPacket {
   diagnosis?: any;
 }
 
-const missionHistory: TelemetryPacket[] = [];
+const RUNTIME_DIR = path.join(__dirname, 'runtime_data');
+const HISTORY_FILE = path.join(RUNTIME_DIR, 'telemetry_history.json');
+
+// Ensure runtime directory exists
+try {
+  if (!fs.existsSync(RUNTIME_DIR)) {
+    fs.mkdirSync(RUNTIME_DIR, { recursive: true });
+  }
+} catch (dirErr) {
+  console.warn('Failed to create runtime dir:', dirErr);
+}
+
+let missionHistory: TelemetryPacket[] = [];
+
+// Load persisted history from disk on boot
+try {
+  if (fs.existsSync(HISTORY_FILE)) {
+    const raw = fs.readFileSync(HISTORY_FILE, 'utf-8');
+    const parsed = JSON.parse(raw);
+    if (Array.isArray(parsed)) {
+      missionHistory = parsed;
+      console.log(`[BOOT] Loaded ${missionHistory.length} persisted telemetry packets from disk.`);
+    }
+  }
+} catch (loadErr) {
+  console.warn('[BOOT] Could not load persisted telemetry history:', loadErr);
+}
+
+const persistHistoryToDisk = () => {
+  try {
+    fs.writeFile(HISTORY_FILE, JSON.stringify(missionHistory.slice(0, 50)), (err) => {
+      if (err) console.warn('[DISK] Error saving telemetry history:', err.message);
+    });
+  } catch (e: any) {
+    console.warn('[DISK] Exception saving telemetry history:', e.message);
+  }
+};
+
 let activeFieldState: Partial<TelemetryPacket> = {
   droneId: 'DRONE-AGRO-X4',
   missionName: 'مسح القطاع الشمالي - حقل القمح النموذجي',
@@ -92,19 +143,36 @@ app.post('/api/telemetry/push', (req: Request, res: Response) => {
       ...packet,
     };
 
+    // Remove any duplicate if resending
+    missionHistory = missionHistory.filter((m) => m.id !== packet.id);
     missionHistory.unshift(packet);
     if (missionHistory.length > 50) {
       missionHistory.pop();
     }
 
-    res.json({ success: true, packetId: packet.id, activeState: activeFieldState });
+    persistHistoryToDisk();
+
+    const mediaType = packet.capturedMedia?.type || 'none';
+    const mediaBytes = packet.capturedMedia?.dataUrl?.length || 0;
+    console.log(`[TELEMETRY PUSH] ✅ Received packet: ${packet.id} | Media: ${mediaType} (${Math.round(mediaBytes / 1024)} KB) | Drone: ${packet.droneId}`);
+
+    res.json({
+      success: true,
+      packetId: packet.id,
+      mediaType,
+      mediaBytes,
+      historyCount: missionHistory.length,
+      activeState: activeFieldState,
+    });
   } catch (error: any) {
+    console.error('[TELEMETRY PUSH ERROR]', error);
     res.status(500).json({ success: false, error: error.message });
   }
 });
 
 // API endpoint for fetching live telemetry in WheatGuard
 app.get('/api/telemetry/live', (_req: Request, res: Response) => {
+  res.setHeader('Cache-Control', 'no-cache, no-store, must-revalidate');
   res.json({
     success: true,
     activeFieldState,
@@ -113,11 +181,14 @@ app.get('/api/telemetry/live', (_req: Request, res: Response) => {
   });
 });
 
-// API endpoint for history
+// API endpoint for history (polled by PC to retrieve packets sent from phone)
 app.get('/api/telemetry/history', (_req: Request, res: Response) => {
+  res.setHeader('Cache-Control', 'no-cache, no-store, must-revalidate');
   res.json({
     success: true,
     history: missionHistory,
+    totalCount: missionHistory.length,
+    serverTime: Date.now(),
   });
 });
 

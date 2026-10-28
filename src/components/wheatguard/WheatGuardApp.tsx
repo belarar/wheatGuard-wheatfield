@@ -50,6 +50,8 @@ interface WheatGuardAppProps {
   selectedParcelId: string;
   onSelectParcel: (id: string) => void;
   onSwitchToDrone: () => void;
+  onRefreshServer?: () => void;
+  isRefreshingServer?: boolean;
 }
 
 export const WheatGuardApp: React.FC<WheatGuardAppProps> = ({
@@ -59,6 +61,8 @@ export const WheatGuardApp: React.FC<WheatGuardAppProps> = ({
   selectedParcelId,
   onSelectParcel,
   onSwitchToDrone,
+  onRefreshServer,
+  isRefreshingServer,
 }) => {
   const latestInitialPacket = incomingPackets[0];
   const initialMedia = latestInitialPacket?.capturedMedia;
@@ -836,6 +840,8 @@ export const WheatGuardApp: React.FC<WheatGuardAppProps> = ({
             packets={incomingPackets}
             onSelectPacket={handleSelectPacket}
             selectedPacketId={selectedPacketId}
+            onRefresh={onRefreshServer}
+            isRefreshing={isRefreshingServer}
           />
 
           <HealthHeatmap
